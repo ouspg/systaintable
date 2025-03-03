@@ -27,7 +27,7 @@ make install
 cd ../lense
 ```
 
-* Download OpenSSH test corpus https://github.com/logpai/loghub/blob/master/OpenSSH/OpenSSH_2k.log and following command run
+* Download OpenSSH test corpus https://github.com/logpai/loghub/blob/master/OpenSSH/OpenSSH_2k.log and run following command
 
 ```console
 tail -n 10000 OpenSSH_2k.log | lense -f json -P -d dictionaries/system/openssh.dict &>> outputssh.txt
