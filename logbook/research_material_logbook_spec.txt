@@ -1,0 +1,47 @@
+Create using Json schema Draft-07 following json
+
+* entry:
+    * timestamp: <date>
+    * author: <name>
+    * processing type: <identification|collection|manual transformation|automatic transformation|audit|analysis|destruction|other>
+    * processing description: <free text>
+* data facts:
+    * description: <free text>
+    * storage:
+        * source location: <url|file path|db path|other>	
+        * source location: <free text>
+        * location: <url|file path|db path|other>
+        * location other: <free text>
+        * retention:
+            * deadline: <date>
+            * removal policy: <delete|delete and notify|return and delete>
+    * metrics:
+        * start time: <date>
+        * end time: <date>
+        * collection time: <date>
+        * size: <bytes>
+        * event count: <positive number>
+        * other metrics: 1...n <free text>
+    * rights:
+        * license: <list of standard (CC) licenses|other>
+        * other license: <free text>
+        * owner:
+            * owner name: <org|person>
+            * contact name: <person>
+            * contact email: <email>
+            * contact phone: <phone>
+            * contact other: <free text>
+            * citation: <not allowed|free text>
+    * PII:
+            * sanitation: <raw|pseudonymized|anonymized>
+            * may contain: 1…n <list of PII types|other>
+            * may contain other: 1…n <free text>
+            * confirmed to contain: 1…n <list of PII types|other>
+            * confirmed to contain other: 1…n <free text>
+
+
+Using that schema make html-form that takes data from json files and brings it to html form and a user can modify and add data values. The User can also start without importing json.
+After changes and inputs the user can export the form as json. The form and json are about research material data. Create this using jsonforms.io
+
+
+
