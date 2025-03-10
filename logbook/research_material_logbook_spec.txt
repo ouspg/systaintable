@@ -1,4 +1,4 @@
-Create using Json schema Draft-07 following json
+following Json Draft-07
 
 * entry:
     * timestamp: <date>
@@ -40,8 +40,8 @@ Create using Json schema Draft-07 following json
             * confirmed to contain other: 1…n <free text>
 
 
-Using that schema make html-form that takes data from json files and brings it to html form and a user can modify and add data values. The User can also start without importing json.
-After changes and inputs the user can export the form as json. The form and json are about research material data. Create this using jsonforms.io
+Using that schema make jsonforms-app that takes data from json files and brings it to html form and a user can modify and add data values. The User can also start without importing json.
+After changes and inputs the user can export the form as json. The form and json are about research material data. Create this using jsonforms.io Version: v3.5.1. Add webpack and webpack-dev-server to the project. And create webpack.config.js 
 
 
 
