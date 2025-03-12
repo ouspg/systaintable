@@ -1,0 +1,2 @@
+Create using python an ID classifier that takes in a random string/value and tries to using regexp 
+tech/functions to classify it as email, IP-address, URL, phone number, PID, UID, EUID, username, DNS-name, address, social media, MAC-address, TTY
