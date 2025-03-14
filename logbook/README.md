@@ -26,7 +26,7 @@
 * Clone the repository
 
 ```console
-git clone 
+git clone git@github.com:ouspg/systaintable.git
 cd logbook
 ```
 
