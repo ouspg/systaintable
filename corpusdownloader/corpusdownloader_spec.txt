@@ -1,0 +1,3 @@
+Create a corpus downloader script that downloads .log files from https://github.com/logpai/loghub/blob/master/ and puts them in test data folder. 
+And after download creates following logbook https://github.com/ouspg/systaintable/tree/main/logbook guide logbook entry jsons for each of the corpuses.
+Add current timestamp to logbook entries. Create guide.md with description how to use corpusdownloader and requirements.
