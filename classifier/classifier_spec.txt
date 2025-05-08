@@ -1,0 +1,2 @@
+Create a regex classifier that classifies whether a value is address, dnsname, email, guid, ip, mac, phonenumber, pid, realname, time, tty, uid, url and username using rust.
+Structure of the classifier should be like that there is a directory and code per each of the value-categories and there should be a tests that can be added.  
