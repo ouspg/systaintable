@@ -1,8 +1,8 @@
-# Corpus downloader ia a script that downloads public corpuses and creates
+# Corpus downloader ia a script that downloads public corpuses and creates logbook entries.
 
 Corpus downloader is a script for downloading public corpuses and creating according logbook entries. You can find spec from corpusdownloader_spec.txt.
 
-# Corpus Downloader Guide
+# Corpus downloader Guide
 
 This guide explains how to use the corpus downloader script to download log files from the LogPAI LogHub repository and generate logbook entries for each corpus.
 
@@ -29,3 +29,4 @@ The `corpusdownloader.py` script:
 
 ```bash
 pip install requests tqdm
+````
