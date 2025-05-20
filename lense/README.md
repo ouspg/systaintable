@@ -1,4 +1,3 @@
-
 # Lense quick start guide
 
 * Install Semantti Lense https://github.com/semantti/lense
@@ -62,3 +61,24 @@ $ cat outputssh.txt
 ["sshd.failed_for_invalid_user+0", {"time": 1702206285}, {"host.logging": "LabSZ"}, {"process": "_proc.auth"}, {"exit": "_proc.auth"}, {"pid": 25539}, {"sshd.failed.reason": "password"}, {"user": "user"}, {"host": "_address"}, {"address": "103.99.0.122"}, {"exit": "_address"}, {"port": 52683}, {"sshd.protocol_version": "ssh2"}]
 ```
 
+## Creating Lense Rules 
+
+Using Lense starts by ...
+
+### Rules and Dictionaries
+
+Lense uses Rules to compress logfiles by matching rules given by user to Lense against the data from logfiles. As part of the compression Lense removes all the unnecessary boiler plate from logsfiles and preserves information that is determined by Rules.
+
+A collection of Lense rules is known as Dictionary. Dictionaries can contain unlimited amount of Lense rules. You can give one or more dictionaries to Lense as a parameter. Some sample dictionaries for processing typical logfiles can be found from Lense repository under dictionaries folder. You can give dictionaries to lense with -d option for example running.
+
+```console
+tail -n 10 OpenSSH_2k.log | bin/lense --statistics -f json -P -d dictionaries/system/openssh.dict > outputssh.txt
+```
+
+### Creating Lense Rules and dictionaries.
+
+Recommended way to create Lense Rules and dictionaries for your use case is either manually by going through you log material and creating Rules that you need one by one or Semantti Finite-state Loom which is an automated way for creating Rules that match your needs.
+
+### Using Semantti Finite-state Loom
+
+Semantti Finite-state Loom is an automated way to 

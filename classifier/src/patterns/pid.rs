@@ -29,6 +29,7 @@ mod tests {
     fn test_valid_pids() {
         let valid_pids = vec![
             "1234",
+            "24839",
             "PID: 1234",
             "[1234]",
             "PID:1234",
