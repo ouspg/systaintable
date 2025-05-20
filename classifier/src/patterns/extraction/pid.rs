@@ -1,6 +1,5 @@
 use regex::Regex;
 use lazy_static::lazy_static;
-use super::PatternMatcher;
 
 lazy_static! {
     // Process ID pattern (numeric, typically 1-5 digits)
@@ -13,13 +12,30 @@ pub fn is_match(value: &str) -> bool {
     PID_PATTERN.is_match(value)
 }
 
+pub fn extract_pids(text: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    
+    // Extract explicit PID references
+    let pid_pattern = Regex::new(r"\b(?:PID|pid)(?::|\s+)(\d{1,7})\b").unwrap();
+    for cap in pid_pattern.captures_iter(text) {
+        if let Some(pid) = cap.get(1) {
+            results.push(pid.as_str().to_string());
+        }
+    }
+    
+    // Extract PIDs in brackets
+    let bracketed_pid = Regex::new(r"\[(?:PID:?)?\s*(\d{1,7})\]").unwrap();
+    for cap in bracketed_pid.captures_iter(text) {
+        if let Some(pid) = cap.get(1) {
+            results.push(pid.as_str().to_string());
+        }
+    }
+    
+    results
+}
+
 pub struct PidMatcher {}
 
-impl PatternMatcher for PidMatcher {
-    fn matches(&self, value: &str) -> bool {
-        is_match(value)
-    }
-}
 
 #[cfg(test)]
 mod tests {

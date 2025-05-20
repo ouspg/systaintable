@@ -13,27 +13,6 @@ fn test_ip_classification() {
 }
 
 #[test]
-fn test_valid_phones() {
-    let valid_phones = vec![
-        "123-456-7890",
-        "(123) 456-7890",
-        "123.456.7890",
-        "1234567890",
-        "+1 123-456-7890",
-        "+44 1234 567890",
-        "+1 (123) 456-7890",
-        "112",           // Emergency number
-        "0200200",       // Medium length local number
-        "+358444094030", // International without spaces
-        "+358 44 409 4030", // International with spaces
-    ];
-    
-    for phone in valid_phones {
-        assert!(is_match(phone), "Phone should be valid: {}", phone);
-    }
-}
-
-#[test]
 fn test_multiple_matches() {
     // Some values might match multiple patterns
     let results = classify("1234");

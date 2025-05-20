@@ -1,6 +1,5 @@
 use regex::Regex;
 use lazy_static::lazy_static;
-use super::PatternMatcher;
 
 lazy_static! {
     // TTY device pattern
@@ -15,10 +14,22 @@ pub fn is_match(value: &str) -> bool {
 
 pub struct TtyMatcher {}
 
-impl PatternMatcher for TtyMatcher {
-    fn matches(&self, value: &str) -> bool {
-        is_match(value)
+pub fn extract_ttys(text: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    
+    // Extract TTY paths
+    let tty_pattern = Regex::new(r"\b(?:/dev/)?(?:tty|pts)/\d+\b").unwrap();
+    for cap in tty_pattern.captures_iter(text) {
+        results.push(cap[0].to_string());
     }
+    
+    // Extract TTY references
+    let tty_ref = Regex::new(r"\b(?:tty|pts)[/:]\d+\b").unwrap();
+    for cap in tty_ref.captures_iter(text) {
+        results.push(cap[0].to_string());
+    }
+    
+    results
 }
 
 #[cfg(test)]

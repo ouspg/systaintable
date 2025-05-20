@@ -8,3 +8,4 @@ description = "A regex classifier for identifying data types"
 regex = "1.10.2"
 lazy_static = "1.4.0"
 clap = { version = "4.4.6", features = ["derive"] }
+indicatif = "0.17.11"

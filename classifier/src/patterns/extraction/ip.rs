@@ -1,6 +1,5 @@
 use regex::Regex;
 use lazy_static::lazy_static;
-use super::PatternMatcher;
 
 lazy_static! {
     // IPv4 pattern
@@ -18,13 +17,18 @@ pub fn is_match(value: &str) -> bool {
     IPV4_PATTERN.is_match(value) || IPV6_PATTERN.is_match(value)
 }
 
-pub struct IpMatcher {}
-
-impl PatternMatcher for IpMatcher {
-    fn matches(&self, value: &str) -> bool {
-        is_match(value)
+pub fn extract_ips(text: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    
+    // Use a more general pattern for extraction that can find IPs in text
+    let extraction_pattern = Regex::new(r"\b(?:\d{1,3}\.){3}\d{1,3}\b").unwrap();
+    for cap in extraction_pattern.captures_iter(text) {
+        results.push(cap[0].to_string());
     }
+    results
 }
+
+pub struct IpMatcher {}
 
 #[cfg(test)]
 mod tests {

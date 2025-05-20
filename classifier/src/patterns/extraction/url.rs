@@ -1,11 +1,10 @@
 use regex::Regex;
 use lazy_static::lazy_static;
-use super::PatternMatcher;
 
 lazy_static! {
-    // URL pattern
+    // URL pattern without lookahead assertions
     static ref URL_PATTERN: Regex = Regex::new(
-        r"^(?:(?:https?|ftp):\/\/)(?:\S+(?::\S*)?@)?(?:(?!10(?:\.\d{1,3}){3})(?!127(?:\.\d{1,3}){3})(?!169\.254(?:\.\d{1,3}){2})(?!192\.168(?:\.\d{1,3}){2})(?!172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})(?:[1-9]\d?|1\d\d|2[01]\d|22[0-3])(?:\.(?:1?\d{1,2}|2[0-4]\d|25[0-5])){2}(?:\.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4]))|(?:(?:[a-z\u00a1-\uffff0-9]+-?)*[a-z\u00a1-\uffff0-9]+)(?:\.(?:[a-z\u00a1-\uffff0-9]+-?)*[a-z\u00a1-\uffff0-9]+)*(?:\.(?:[a-z\u00a1-\uffff]{2,})))(?::\d{2,5})?(?:\/[^\s]*)?$"
+        r"^(?:https?|ftp)://(?:(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::\d{1,5})?(?:/[^\s]*)?$"
     ).unwrap();
 }
 
@@ -13,13 +12,25 @@ pub fn is_match(value: &str) -> bool {
     URL_PATTERN.is_match(value)
 }
 
-pub struct UrlMatcher {}
-
-impl PatternMatcher for UrlMatcher {
-    fn matches(&self, value: &str) -> bool {
-        is_match(value)
+pub fn extract_urls(text: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    
+    // Extract URLs in common formats
+    let url_pattern = Regex::new(r"\bhttps?://(?:[-\w]+\.)+[\w]{2,}(?:/[%\w\.-]*)*(?:\?\S*)?\b").unwrap();
+    for cap in url_pattern.captures_iter(text) {
+        results.push(cap[0].to_string());
     }
+    
+    // Extract www URLs
+    let www_pattern = Regex::new(r"\bwww\.(?:[-\w]+\.)+[\w]{2,}(?:/[%\w\.-]*)*(?:\?\S*)?\b").unwrap();
+    for cap in www_pattern.captures_iter(text) {
+        results.push(cap[0].to_string());
+    }
+    
+    results
 }
+
+pub struct UrlMatcher {}
 
 #[cfg(test)]
 mod tests {

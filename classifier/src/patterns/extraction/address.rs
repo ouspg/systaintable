@@ -1,6 +1,5 @@
 use regex::Regex;
 use lazy_static::lazy_static;
-use super::PatternMatcher;
 
 lazy_static! {
     // Basic street address pattern
@@ -13,13 +12,15 @@ pub fn is_match(value: &str) -> bool {
     ADDRESS_PATTERN.is_match(value)
 }
 
-pub struct AddressMatcher {}
-
-impl PatternMatcher for AddressMatcher {
-    fn matches(&self, value: &str) -> bool {
-        is_match(value)
+pub fn extract_addresses(text: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    for cap in ADDRESS_PATTERN.captures_iter(text) {
+        results.push(cap[0].to_string());
     }
+    results
 }
+
+pub struct AddressMatcher {}
 
 #[cfg(test)]
 mod tests {

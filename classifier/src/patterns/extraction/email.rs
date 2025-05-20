@@ -1,6 +1,5 @@
 use regex::Regex;
 use lazy_static::lazy_static;
-use super::PatternMatcher;
 
 lazy_static! {
     static ref EMAIL_PATTERN: Regex = Regex::new(
@@ -12,13 +11,15 @@ pub fn is_match(value: &str) -> bool {
     EMAIL_PATTERN.is_match(value)
 }
 
-pub struct EmailMatcher {}
-
-impl PatternMatcher for EmailMatcher {
-    fn matches(&self, value: &str) -> bool {
-        is_match(value)
+pub fn extract_emails(text: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    for cap in EMAIL_PATTERN.captures_iter(text) {
+        results.push(cap[0].to_string());
     }
+    results
 }
+
+pub struct EmailMatcher {}
 
 #[cfg(test)]
 mod tests {
