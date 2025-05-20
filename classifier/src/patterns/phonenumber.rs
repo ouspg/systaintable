@@ -5,7 +5,7 @@ use super::PatternMatcher;
 lazy_static! {
     // Phone number patterns for various formats
     static ref PHONE_PATTERN: Regex = Regex::new(
-        r"^(?:(?:\+\d{1,3}[-. ]?)?(?:\(\d{1,4}\)|\d{1,4})[-. ]?\d{1,4}[-. ]?\d{1,4}(?:[-. ]?\d{1,4})?)$"
+        r"^(?:(?:\+\d{1,3}[-. ]?)?(?:\(\d{1,4}\)|\d{1,4})[-. ]?\d{1,4}[-. ]?\d{1,4}(?:[-. ]?\d{1,4})?|\d{3,7}|\+\d{1,3}[-. ]?\d{3,12})$"
     ).unwrap();
 }
 
@@ -35,12 +35,18 @@ mod tests {
             "+1 123-456-7890",
             "+44 1234 567890",
             "+1 (123) 456-7890",
-        ];
-        
-        for phone in valid_phones {
-            assert!(is_match(phone), "Phone should be valid: {}", phone);
-        }
+            "112",           // Emergency number
+            "0200200",       // Medium length local number
+            "0223112131",    // Local number without spaces
+            "022 311 2131",   // Local number with spaces
+            "+358111094030", // International without spaces
+            "+358 11 409 4030", // International with spaces
+    ];
+    
+    for phone in valid_phones {
+        assert!(is_match(phone), "Phone should be valid: {}", phone);
     }
+}
     
     #[test]
     fn test_invalid_phones() {
