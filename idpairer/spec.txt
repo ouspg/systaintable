@@ -1,0 +1,12 @@
+As an experienced software engineer write using Rust a ID Pairer software that takes
+following format from stdout and tries matching identities by comparing identyvalues by
+timestamp and if timestamp difference is within 1 second combines it values to same identity. Output would could be json.
+
+Input format from Classifier 
+
+"
+rownumber, timestamp, identity type, identity value
+rownumber, timestamp, identity type, identity value
+rownumber, timestamp, identity type, identity value
+rownumber, timestamp, identity type, identity value
+"
