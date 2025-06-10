@@ -3,11 +3,13 @@ use indicatif::{ProgressBar, ProgressStyle};
 use regex_classifier::classify;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::fs;
+use serde_json::json;
+use std::time::{Instant};
 
 // Import extraction patterns
 mod patterns {
@@ -54,7 +56,17 @@ struct Args {
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
+
+    // Create a SEPARATE counter that's immune to threading issues
+    let main_thread_line_count = Arc::new(Mutex::new(0usize));
     
+    // Keep your existing counters for compatibility
+    let category_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+    let total_classifications = Arc::new(Mutex::new(0usize));
+    let processed_lines = Arc::new(Mutex::new(0usize));   
+    
+    // Track total lines for stats mode
+    let line_count_for_stats = Arc::new(Mutex::new(0usize));
     // Open the file
     let file = File::open(&args.file_path)?;
     let file_size = file.metadata()?.len();
@@ -126,6 +138,7 @@ fn main() -> io::Result<()> {
     let category_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
     let total_classifications = Arc::new(Mutex::new(0usize));
     let processed_lines = Arc::new(Mutex::new(0usize));
+    let line_count_for_stats = Arc::new(Mutex::new(0usize));
     
     if !args.stats {
         println!("Processing file: {}", args.file_path.display());
@@ -144,20 +157,28 @@ fn main() -> io::Result<()> {
     let mut line_count = 0;
     let mut found_categories = false;
     let sampling_rate = args.sample.unwrap_or(1);
-    
+
     for line_result in reader.lines() {
+        line_count += 1;
+        
+        // ALWAYS update the processed lines counter, regardless of threading
+        {
+            let mut processed = processed_lines.lock().unwrap();
+            *processed = line_count;
+        }
+        {
+            let mut main_count = main_thread_line_count.lock().unwrap();
+            *main_count = line_count;
+        }        
         // Apply limit if specified
-        if line_count >= limit {
+        if line_count > limit {
             break;
         }
         
         // Apply sampling if specified
         if sampling_rate > 1 && line_count % sampling_rate != 0 {
-            line_count += 1;
             continue;
         }
-        
-        line_count += 1;
         
         // Update progress
         if let Some(pb) = &progress_bar {
@@ -168,6 +189,7 @@ fn main() -> io::Result<()> {
         
         let line = line_result?;
         
+        // The rest of your processing logic...        
         if !args.stats {
             println!("\nLine {}:", line_count);
         }
@@ -285,15 +307,16 @@ fn main() -> io::Result<()> {
                 continue;
             }
             
-            // Update statistics
+            // Update statistics - MODIFIED SECTION
             if args.stats {
                 let mut counts = category_counts.lock().unwrap();
-                let mut total = total_classifications.lock().unwrap();
+                let mut total = total_classifications.lock().unwrap(); // Remove the *
                 
                 for category in &categories {
                     *counts.entry(category.clone()).or_insert(0) += 1;
-                    *total += 1;
+                    *total += 1; // Now this will work
                 }
+                // Remove the println statements from here - they belong outside the loop
             }
             
             if !args.stats {
@@ -305,44 +328,20 @@ fn main() -> io::Result<()> {
         if !found_categories && !args.stats {
             println!("  No pattern matches found");
         }
-        
-        // Update processed lines count
-        if args.stats {
-            let mut processed = processed_lines.lock().unwrap();
-            *processed += 1;
-            
-            // Update progress bar message occasionally
-            if let Some(pb) = &progress_bar {
-                if *processed % 5000 == 0 {
-                    let total = *total_classifications.lock().unwrap();
-                    pb.set_message(format!("Found {} classifications", total));
-                }
-            }
-        }
     }
     
-    // Finish the progress bar
-    if let Some(pb) = progress_bar {
-        pb.finish_with_message("Classification complete");
-    }
-    
+    // Move the statistics display OUTSIDE the processing loop
+
     // Display statistics if enabled
     if args.stats {
         let counts = category_counts.lock().unwrap();
         let total = *total_classifications.lock().unwrap();
-        let processed = *processed_lines.lock().unwrap();
         
-        println!("\n----- Classification Statistics -----");
-        if args.sample.is_some() {
-            println!("Total log lines processed: {} (1 in every {} lines)", 
-                     processed, sampling_rate);
-            println!("Estimated total lines in file: {}", total_lines);
-        } else {
-            println!("Total log lines processed: {}", processed);
-        }
+        // Use the simple line_count variable that we know works
+        let processed = line_count; // This is the actual line counter from the loop
         
-        println!("Total classifications: {}", total);
-        println!("\nClassifications by category:");
+        // Create JSON statistics
+        let mut category_stats: Vec<serde_json::Value> = Vec::new();
         
         // Sort categories by count (highest first)
         let mut categories: Vec<_> = counts.iter().collect();
@@ -354,9 +353,28 @@ fn main() -> io::Result<()> {
             } else {
                 0.0
             };
-            println!("  {}: {} ({}%)", category, count, percentage);
+            
+            category_stats.push(json!({
+                "category": category,
+                "count": count,
+                "percentage": percentage
+            }));
+        }
+        
+        let stats_json = json!({
+            "summary": {
+                "total_lines_processed": processed,
+                "total_classifications": total,
+                "file_path": args.file_path.to_string_lossy()
+            },
+            "categories": category_stats
+        });
+        
+        // Write to outputstats.json
+        match fs::write("outputstats.json", serde_json::to_string_pretty(&stats_json)?) {
+            Ok(_) => println!("Statistics written to outputstats.json"),
+            Err(e) => eprintln!("Error writing statistics file: {}", e),
         }
     }
-    
     Ok(())
 }

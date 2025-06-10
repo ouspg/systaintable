@@ -7,9 +7,14 @@ lazy_static! {
         r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})*$"
     ).unwrap();
     
-    // DNS extraction pattern with additional potential characters
+    // DNS extraction pattern without the problematic lookbehind
     static ref DNS_EXTRACT_PATTERN: Regex = Regex::new(
-        r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})*(?:\.?\]?\)?)?"
+        r"(?:(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)"
+    ).unwrap();
+    
+    // Email pattern for filtering
+    static ref EMAIL_PATTERN: Regex = Regex::new(
+        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
     ).unwrap();
 }
 
@@ -22,16 +27,29 @@ pub fn is_match(value: &str) -> bool {
 pub fn extract_dnsnames(text: &str) -> Vec<String> {
     let mut results = Vec::new();
     
+    // First, find all email addresses so we can exclude them
+    let email_matches: Vec<_> = EMAIL_PATTERN.find_iter(text)
+        .map(|m| (m.start(), m.end()))
+        .collect();
+    
+    // Then extract domain names
     for cap in DNS_EXTRACT_PATTERN.captures_iter(text) {
         let domain = cap[0].to_string();
+        let match_start = text.find(&domain).unwrap_or(0);
+        let match_end = match_start + domain.len();
+        
+        // Skip if this match is part of an email
+        if email_matches.iter().any(|&(start, end)| match_start >= start && match_end <= end) {
+            continue;
+        }
+        
+        // Rest of your validation logic remains the same
         let clean_domain = domain.trim_end_matches(|c| c == '.' || c == ']' || c == ')');
         
-        // Skip values that look like IPs
         if clean_domain.chars().all(|c| c.is_digit(10) || c == '.') {
             continue;
         }
         
-        // Validate the cleaned domain
         if clean_domain.contains('.') && !clean_domain.starts_with('.') && !clean_domain.contains("..") {
             results.push(clean_domain.to_string());
         }
@@ -75,6 +93,7 @@ mod tests {
             "-example.com",
             "example-.com",
             "example.com-",
+            "example.example@example.com"
         ];
         
         for name in invalid_names {
