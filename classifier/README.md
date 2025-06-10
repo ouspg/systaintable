@@ -47,3 +47,23 @@ cargo test
 cargo run -- "user@example.com"
 Output: The value 'user@example.com' was classified as: email
 ```
+
+## MCP Cursor config
+
+running the server
+```
+./target/release/mcp_http_server
+```
+
+Config for connecting with cursor
+Add this to Settings-> MCP Tools-> New MCP Server
+
+```
+{
+  "mcpServers": {
+    "regex-classifier": {
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```

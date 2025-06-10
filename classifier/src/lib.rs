@@ -1,4 +1,5 @@
 pub mod patterns;
+pub mod mcp_server;
 
 use std::collections::HashMap;
 

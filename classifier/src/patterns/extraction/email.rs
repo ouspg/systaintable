@@ -5,6 +5,11 @@ lazy_static! {
     static ref EMAIL_PATTERN: Regex = Regex::new(
         r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     ).unwrap();
+
+    // Add extraction pattern without anchors
+    static ref EMAIL_EXTRACTION_PATTERN: Regex = Regex::new(
+        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+    ).unwrap();
 }
 
 pub fn is_match(value: &str) -> bool {
@@ -13,9 +18,11 @@ pub fn is_match(value: &str) -> bool {
 
 pub fn extract_emails(text: &str) -> Vec<String> {
     let mut results = Vec::new();
-    for cap in EMAIL_PATTERN.captures_iter(text) {
+    
+    for cap in EMAIL_EXTRACTION_PATTERN.captures_iter(text) {
         results.push(cap[0].to_string());
     }
+    
     results
 }
 
