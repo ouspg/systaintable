@@ -1,0 +1,19 @@
+FROM messense/rust-musl-cross:x86_64-musl as builder
+
+WORKDIR /home/rust/src
+
+# Copy your project files
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src/
+# Don't copy .cargo config as it has macOS-specific paths
+
+# Build the Lambda function
+RUN cargo build --release --bin lambda
+
+# The binary will be statically linked and ready for Lambda
+RUN cp target/x86_64-unknown-linux-musl/release/lambda /home/rust/bootstrap
+
+# Create minimal Lambda container
+FROM public.ecr.aws/lambda/provided:al2
+COPY --from=builder /home/rust/bootstrap /var/runtime/bootstrap
+CMD [ "bootstrap" ]
