@@ -38,7 +38,6 @@ impl McpServer {
             }
         }))
     }
-
     fn handle_tools_list(&self) -> Result<Value, String> {
         Ok(json!({
             "result": {
@@ -46,7 +45,7 @@ impl McpServer {
                     {
                         "name": "analyze_file",
                         "description": "Analyze a file for PII patterns and return classification statistics",
-                        "inputSchema": {
+                        "inputSchema": {  // Change from "schema" to "inputSchema"
                             "type": "object",
                             "properties": {
                                 "file_path": {
@@ -61,10 +60,6 @@ impl McpServer {
                                     "type": "string",
                                     "description": "Exclude specific categories (comma-separated)"
                                 },
-                                "categories": {
-                                    "type": "string",
-                                    "description": "Show only specific categories (comma-separated)"
-                                },
                                 "sample": {
                                     "type": "integer",
                                     "description": "Sample 1 in N lines for faster processing"
@@ -76,7 +71,7 @@ impl McpServer {
                     {
                         "name": "analyze_text",
                         "description": "Analyze text content directly for PII patterns",
-                        "inputSchema": {
+                        "inputSchema": {  // Change from "schema" to "inputSchema"
                             "type": "object",
                             "properties": {
                                 "text": {
@@ -95,14 +90,25 @@ impl McpServer {
             }
         }))
     }
-
+    
     fn handle_tool_call(&self, params: Value) -> Result<Value, String> {
-        let tool_name = params["name"].as_str().unwrap_or("");
+        let tool_name = params["name"].as_str()
+            .ok_or("Missing tool name")?;
+    
         let arguments = &params["arguments"];
-
+    
         match tool_name {
             "analyze_file" => self.analyze_file(arguments),
             "analyze_text" => self.analyze_text(arguments),
+            "analyze_content" => self.analyze_text(arguments), // Reuse the analyze_text implementation
+            "get_upload_url" => {
+                // This should be handled directly in lambda.rs, but we need to avoid returning an error
+                Ok(json!({
+                    "result": {
+                        "message": "Please use the API directly for this operation"
+                    }
+                }))
+            },
             _ => Err(format!("Unknown tool: {}", tool_name))
         }
     }
