@@ -15,19 +15,18 @@ async fn process_s3_file(
     exclude: Option<&str>,
     sampling_rate: usize
 ) -> Result<Value, Error> {
-    // Initialize AWS SDK
+    // Set up S3 client
     let config = aws_config::load_from_env().await;
-    let client = aws_sdk_s3::Client::new(&config);
+    let s3_client = aws_sdk_s3::Client::new(&config);
     
-    // Get object from S3
-    let resp = client.get_object()
+    // Get the object from S3
+    let response = s3_client.get_object()
         .bucket(bucket)
         .key(key)
         .send()
         .await?;
     
-    // Read content
-    let data = resp.body.collect().await?;
+    let data = response.body.collect().await?.to_vec();
     let content = String::from_utf8(data.to_vec())?;
     
     let excluded_categories: Vec<String> = match exclude {
@@ -92,37 +91,34 @@ async fn process_s3_file(
                 total_classifications += 1;
             }
         }
-        
-        // Add other pattern types as needed
     }
     
-    // Prepare statistics
-    let mut category_stats: Vec<Value> = Vec::new();
-    let mut categories: Vec<_> = category_counts.iter().collect();
-    categories.sort_by(|a, b| b.1.cmp(a.1));
-    
-    for (category, count) in categories {
-        let percentage = if total_classifications > 0 {
-            ((*count as f64) / (total_classifications as f64) * 100.0).round()
-        } else {
-            0.0
-        };
-        
-        category_stats.push(json!({
+    // Build categories from counts
+    let mut categories = Vec::new();
+    for (category, count) in &category_counts {
+        categories.push(json!({
             "category": category,
             "count": count,
-            "percentage": percentage
+            "percentage": ((*count as f64) / (total_classifications as f64) * 100.0).round()
         }));
     }
     
+    // Sort categories by count (descending)
+    categories.sort_by(|a, b| {
+        let count_a = a["count"].as_u64().unwrap_or(0);
+        let count_b = b["count"].as_u64().unwrap_or(0);
+        count_b.cmp(&count_a)
+    });
+    
+    // Include found patterns as findings in the response
     Ok(json!({
-        "categories": found_patterns,
+        "categories": categories,
+        "findings": found_patterns,  // This is the key addition
         "summary": {
             "total_lines_processed": line_count,
             "total_classifications": total_classifications,
             "source": format!("s3://{}/{}", bucket, key)
-        },
-        "statistics": category_stats
+        }
     }))
 }
 
