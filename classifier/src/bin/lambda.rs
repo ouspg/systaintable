@@ -152,6 +152,8 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     
     // Handle MCP protocol for Cursor integration
     if path.ends_with("/mcp") && method == "POST" {
+        eprintln!("Handling MCP request");
+        
         let body = match event.body() {
             Body::Text(text) => text.clone(),
             Body::Binary(bytes) => String::from_utf8_lossy(bytes).to_string(),
@@ -160,13 +162,92 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                 .body("Invalid request body".into())?)
         };
         
-        let request_json: Value = serde_json::from_str(&body)?;
-        let id = request_json["id"].clone();
+        eprintln!("MCP request body: {}", body);
+        
+        // Check if this is a direct parameter from Cursor or full JSON-RPC
+        let mut request_json: Value = serde_json::from_str(&body)?;
+        let id;
+        
+        // Handle Cursor's direct format: {"text": "content"}
+        if !request_json.get("jsonrpc").is_some() && !request_json.get("method").is_some() {
+            eprintln!("Detected direct format from Cursor");
+            // Convert to JSON-RPC format
+            id = json!(1);
+            let direct_params = request_json.clone();
+            request_json = json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "analyze_text", 
+                    "arguments": direct_params
+                }
+            });
+            eprintln!("Converted to JSON-RPC format: {}", request_json);
+        } else {
+            id = request_json["id"].clone();
+        }
         
         // Special handling for file upload capability
         if request_json["method"].as_str() == Some("tools/call") {
             let tool_name = request_json["params"]["name"].as_str().unwrap_or("");
-            
+            eprintln!("Processing tool call: {}", tool_name);             
+            if tool_name == "analyze_file" {
+                let file_path = request_json["params"]["arguments"]["file_path"].as_str();
+                
+                if let Some(file_path) = file_path {
+                    eprintln!("Processing file path: {}", file_path);
+                    
+                    // Get other parameters
+                    let limit = request_json["params"]["arguments"]["limit"].as_u64().map(|x| x as usize);
+                    let exclude = request_json["params"]["arguments"]["exclude"].as_str();
+                    let sample = request_json["params"]["arguments"]["sample"].as_u64().map(|x| x as usize).unwrap_or(1);
+                    
+                    // Process the file
+                    match process_file_analysis(file_path, limit, exclude, sample).await {
+                        Ok(stats) => {
+                            // Format a nice response for Cursor
+                            let mut analysis_text = format!("File Analysis Complete: {}\n\n", file_path);
+                            // Rest of your formatting code...
+                            
+                            let result = json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "result": {
+                                    "content": [{
+                                        "type": "text",
+                                        "text": analysis_text
+                                    }],
+                                    "_meta": stats
+                                }
+                            });
+                            
+                            return Ok(Response::builder()
+                                .status(200)
+                                .header("Content-Type", "application/json")
+                                .body(result.to_string().into())?);
+                        },
+                        Err(e) => {
+                            eprintln!("Error processing file: {}", e);
+                            let error_response = json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "result": { // Note: using "result" not "error" for Cursor compatibility
+                                    "content": [{
+                                        "type": "text",
+                                        "text": format!("ERROR: Failed to process S3 file: {}\n\nPlease check that the file exists and is accessible.", e)
+                                    }]
+                                }
+                            });
+                            
+                            return Ok(Response::builder()
+                                .status(200)
+                                .header("Content-Type", "application/json")
+                                .body(error_response.to_string().into())?);
+                        }
+                    }
+                }
+            }            
             if tool_name == "get_upload_url" {
                 if let Some(file_name) = request_json["params"]["arguments"]["file_name"].as_str() {
                     let bucket = std::env::var("S3_BUCKET").unwrap_or_else(|_| "regex-classifier-uploads".to_string());
@@ -206,6 +287,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                     }
                 }
             } else if tool_name == "analyze_content" || tool_name == "analyze_text" {
+                eprintln!("Found tool: {} - processing with direct implementation", tool_name);
                 let content_param = if tool_name == "analyze_content" { "content" } else { "text" };
                 
                 if let Some(content) = request_json["params"]["arguments"][content_param].as_str() {
@@ -245,17 +327,49 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                     }
                     
                     // Build response
+                    let mut analysis_text = format!("Pattern Analysis Results:\n\n");
+
+                    // Add breakdown by category
+                    let email_count = found_patterns.iter().filter(|p| p["category"].as_str() == Some("email")).count();
+                    let ip_count = found_patterns.iter().filter(|p| p["category"].as_str() == Some("ip")).count();
+                    let dns_count = found_patterns.iter().filter(|p| p["category"].as_str() == Some("dns_name")).count();
+                    let url_count = found_patterns.iter().filter(|p| p["category"].as_str() == Some("url")).count();
+                    
+                    analysis_text.push_str(&format!("Found {} patterns:\n", found_patterns.len()));
+                    if email_count > 0 { analysis_text.push_str(&format!("• {} email addresses\n", email_count)); }
+                    if ip_count > 0 { analysis_text.push_str(&format!("• {} IP addresses\n", ip_count)); }
+                    if dns_count > 0 { analysis_text.push_str(&format!("• {} DNS names\n", dns_count)); }
+                    if url_count > 0 { analysis_text.push_str(&format!("• {} URLs\n", url_count)); }
+                    
+                    // Add the actual found patterns
+                    if !found_patterns.is_empty() {
+                        analysis_text.push_str("\nDetailed findings:\n");
+                        for pattern in &found_patterns {
+                            if let (Some(category), Some(value)) = (pattern["category"].as_str(), pattern["value"].as_str()) {
+                                analysis_text.push_str(&format!("• {}: {}\n", category, value));
+                            }
+                        }
+                    }
+                    
+                    // Build response with content array for Cursor
                     let result = json!({
                         "jsonrpc": "2.0",
                         "id": id,
                         "result": {
-                            "categories": found_patterns,
-                            "summary": {
-                                "total_patterns": found_patterns.len()
+                            "content": [{
+                                "type": "text",
+                                "text": analysis_text
+                            }],
+                            "_meta": {
+                                "categories": found_patterns,
+                                "summary": {
+                                    "total_patterns": found_patterns.len()
+                                }
                             }
                         }
                     });
                     
+                    eprintln!("Returning direct tool response: {}", result);
                     return Ok(Response::builder()
                         .status(200)
                         .header("Content-Type", "application/json")
@@ -267,6 +381,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         // Regular MCP protocol handling
         match server.handle_request(request_json).await {
             Ok(mut response) => {
+                eprintln!("MCP server returned response: {}", response);
                 // Ensure proper JSON-RPC 2.0 format
                 if let Some(obj) = response.as_object_mut() {
                     obj.insert("jsonrpc".to_string(), json!("2.0"));
@@ -274,10 +389,13 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                         obj.insert("id".to_string(), id);
                     }
                 }
+                let response_body = response.to_string();
+                eprintln!("Final formatted response: {}", response_body);
+                
                 Ok(Response::builder()
                     .status(200)
                     .header("Content-Type", "application/json")
-                    .body(response.to_string().into())?)
+                    .body(response_body.into())?)
             },
             Err(err) => {
                 let error_response = json!({
@@ -557,6 +675,35 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                 "message": "Not found"
             }).to_string().into())?)
     }
+}
+
+async fn process_file_analysis(
+    file_path: &str,
+    limit: Option<usize>,
+    exclude: Option<&str>,
+    sampling_rate: usize
+) -> Result<Value, Error> {
+    eprintln!("Processing file analysis for: {}", file_path);
+    // If it's an S3 path
+    if file_path.starts_with("s3://") {
+        eprintln!("Detected S3 path");
+        let parts: Vec<&str> = file_path.strip_prefix("s3://")
+            .unwrap_or(file_path)
+            .splitn(2, '/')
+            .collect();
+        
+        if parts.len() == 2 {
+            eprintln!("Processing S3 file: bucket={}, key={}", parts[0], parts[1]);
+            return process_s3_file(parts[0], parts[1], limit, exclude, sampling_rate).await;
+        }
+    }
+    
+    // Otherwise, call McpServer's implementation
+    eprintln!("Using local file processing for: {}", file_path);
+    let server = McpServer::new();
+    let categories = None; // Not used in the original
+    server.process_file(file_path, limit, exclude, categories, sampling_rate)
+        .map_err(|e| e.into())
 }
 
 #[tokio::main]

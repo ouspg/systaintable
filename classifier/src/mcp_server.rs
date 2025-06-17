@@ -144,130 +144,89 @@ impl McpServer {
                         category["count"].as_u64(),
                         category["percentage"].as_f64()
                     ) {
-                        analysis_text.push_str(&format!("- {}: {} occurrences ({}%)\n", 
+                        analysis_text.push_str(&format!("• {}: {} occurrences ({}%)\n", 
                             cat_name, count, percentage));
                     }
                 }
             }
         }
-    
+        
+        // Return using Cursor's expected format with content array
         Ok(json!({
             "result": {
                 "content": [{
                     "type": "text",
                     "text": analysis_text
                 }],
-                "data": stats  // Keep the raw data for potential further processing
-            }
-        }))
-    }
-
-    fn analyze_text(&self, args: &Value) -> Result<Value, String> {
-        let text = args["text"].as_str()
-            .ok_or("text is required")?;
-        
-        let exclude = args["exclude"].as_str();
-        let excluded_categories: Vec<String> = match exclude {
-            Some(excl) => excl.split(',').map(|s| s.trim().to_string()).collect(),
-            None => Vec::new()
-        };
-    
-        let mut category_counts: HashMap<String, usize> = HashMap::new();
-        let mut total_classifications = 0;
-    
-        // Split text into lines and process each
-        for line in text.lines() {
-            let mut values = Vec::new();
-    
-            // Extract values using your existing extraction logic
-            if !excluded_categories.contains(&"ip".to_string()) {
-                for ip in extraction::ip::extract_ips(line) {
-                    values.push(ip);
-                }
-            }
-            if !excluded_categories.contains(&"email".to_string()) {
-                for email in extraction::email::extract_emails(line) {
-                    values.push(email);
-                }
-            }
-            if !excluded_categories.contains(&"phonenumber".to_string()) {
-                for phone in extraction::phonenumber::extract_phonenumbers(line) {
-                    values.push(phone);
-                }
-            }
-            if !excluded_categories.contains(&"mac".to_string()) {
-                for mac in extraction::mac::extract_macs(line) {
-                    values.push(mac);
-                }
-            }
-            if !excluded_categories.contains(&"url".to_string()) {
-                for url in extraction::url::extract_urls(line) {
-                    values.push(url);
-                }
-            }
-            if !excluded_categories.contains(&"address".to_string()) {
-                for address in extraction::address::extract_addresses(line) {
-                    values.push(address);
-                }
-            }
-            if !excluded_categories.contains(&"dnsname".to_string()) {
-                for dns in extraction::dnsname::extract_dnsnames(line) {
-                    values.push(dns);
-                }
-            }
-            if !excluded_categories.contains(&"time".to_string()) {
-                for time in extraction::time::extract_times(line) {
-                    values.push(time);
-                }
-            }
-            if !excluded_categories.contains(&"tty".to_string()) {
-                for tty in extraction::tty::extract_ttys(line) {
-                    values.push(tty);
-                }
-            }
-            if !excluded_categories.contains(&"pid".to_string()) {
-                for pid in extraction::pid::extract_pids(line) {
-                    values.push(pid);
-                }
-            }
-    
-            // Classify each value
-            for value in values {
-                if value.len() < 3 || ["null", "true", "false"].contains(&value.as_str()) { 
-                    continue; 
-                }
-                
-                let mut categories = classify(&value);
-                
-                if !excluded_categories.is_empty() {
-                    categories.retain(|c| !excluded_categories.contains(c));
-                }
-    
-                for category in categories {
-                    *category_counts.entry(category).or_insert(0) += 1;
-                    total_classifications += 1;
-                }
-            }
-        }
-    
-        // Store the count before moving category_counts
-        let num_categories = category_counts.len();
-        let stats = self.build_stats_json(text.lines().count(), total_classifications, category_counts, "text_input");
-    
-        // Return proper MCP response format
-        Ok(json!({
-            "result": {
-                "content": [{
-                    "type": "text",
-                    "text": format!("Text analysis complete. Found {} classifications across {} categories", 
-                        total_classifications, num_categories)
-                }],
                 "_meta": stats
             }
         }))
     }
 
-    fn process_file(&self, file_path: &str, limit: Option<usize>, exclude: Option<&str>, 
+    fn analyze_text(&self, args: &Value) -> Result<Value, String> {
+        // Get text parameter - check both direct format and JSON-RPC format
+        let text = if let Some(direct_text) = args.as_str() {
+            // Direct text string (from Cursor)
+            direct_text
+        } else if let Some(text_obj) = args["text"].as_str() {
+            // Regular JSON object with text property (from curl)
+            text_obj
+        } else if let Some(content_obj) = args["content"].as_str() {
+            // Try content parameter as fallback
+            content_obj
+        } else {
+            return Err("text parameter is required".to_string());
+        };
+        
+        eprintln!("MCP server analyzing text: {:.100}...", text.chars().take(100).collect::<String>());
+        
+        // Collect patterns directly using extraction functions
+        let mut found_patterns = Vec::new();
+        
+        // Email patterns
+        for email in extraction::email::extract_emails(text) {
+            found_patterns.push(json!({
+                "category": "email",
+                "value": email
+            }));
+        }
+        
+        // IP patterns
+        for ip in extraction::ip::extract_ips(text) {
+            found_patterns.push(json!({
+                "category": "ip",
+                "value": ip
+            }));
+        }
+        
+        // URL patterns
+        for url in extraction::url::extract_urls(text) {
+            found_patterns.push(json!({
+                "category": "url",
+                "value": url
+            }));
+        }
+        
+        // DNS name patterns
+        for dns in extraction::dnsname::extract_dnsnames(text) {
+            found_patterns.push(json!({
+                "category": "dns_name",
+                "value": dns
+            }));
+        }
+        
+        eprintln!("MCP server found {} patterns", found_patterns.len());
+        
+        // Return format that matches Lambda's direct response
+        Ok(json!({
+            "categories": found_patterns,
+            "summary": {
+                "total_patterns": found_patterns.len()
+            }
+        }))
+    }
+
+    pub fn process_file(&self, file_path: &str, limit: Option<usize>, exclude: Option<&str>, 
                    _categories: Option<&str>, sampling_rate: usize) -> io::Result<Value> {
         let file = File::open(file_path)?;
         let reader = BufReader::with_capacity(1_000_000, file);
