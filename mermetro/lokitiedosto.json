@@ -15,13 +15,13 @@
         "line": "1",
         "timestamp": "2023-10-01T08:15:23Z",
         "type": "Käyttäjä",
-        "value": "matti.virtanen"
+        "value": "matti.meikalainen"
     },
     {
         "line": "2",
         "timestamp": "2023-04-01T08:22:15Z",
         "type": "Email",
-        "value": "matti.virtanen@yritys.fi"
+        "value": "matti.meikalainen@yritys.fi"
     },
     {
         "line": "2",
@@ -45,7 +45,7 @@
         "line": "3",
         "timestamp": "2023-10-01T09:45:32Z",
         "type": "Käyttäjä",
-        "value": "anna.korhonen"
+        "value": "anna.meikalainen"
     },
     {
         "line": "4",
@@ -93,7 +93,7 @@
         "line": "7",
         "timestamp": "2023-05-01T13:21:09Z",
         "type": "Email",
-        "value": "anna.korhonen@yritys.fi"
+        "value": "anna.meikalainen@yritys.fi"
     },
     {
         "line": "7",
@@ -105,7 +105,7 @@
         "line": "8",
         "timestamp": "2023-10-01T14:44:55Z",
         "type": "IP-osoite",
-        "value": "203.0.113.42"
+        "value": "123.321.231.132"
     },
     {
         "line": "8",
@@ -135,7 +135,7 @@
         "line": "10",
         "timestamp": "2023-10-01T16:08:41Z",
         "type": "Käyttäjä",
-        "value": "matti.virtanen"
+        "value": "matti.meikalainen"
     },
     {
         "line": "11",
