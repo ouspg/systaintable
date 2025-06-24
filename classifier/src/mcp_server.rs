@@ -20,6 +20,7 @@ impl McpServer {
             "initialize" => self.handle_initialize(),
             "tools/list" => self.handle_tools_list(),
             "tools/call" => self.handle_tool_call(request["params"].clone()),
+            "prompts/list" => self.handle_prompts_list(),
             _ => Err(format!("Unknown method: {}", method))
         }
     }
@@ -29,12 +30,45 @@ impl McpServer {
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {
-                    "tools": {}
+                    "tools": {},
+                    "prompts": {}
                 },
                 "serverInfo": {
                     "name": "regex-classifier",
                     "version": "1.0.0"
                 }
+            }
+        }))
+    }
+    fn handle_prompts_list(&self) -> Result<Value, String> {
+        Ok(json!({
+            "result": {
+                "prompts": [
+                    {
+                        "id": "regex-classifier-usage",
+                        "title": "How to Use Regex Classifier",
+                        "description": "Get help using the regex-classifier tool to detect PII in text and files",
+                        "prompt": "Please show me how to use regex-classifier to:\n\n1. Analyze a text snippet for PII like emails and IP addresses\n2. Analyze a file stored in S3\n3. Upload a local file to S3 for analysis\n\nProvide step-by-step instructions with examples for each use case."
+                    },
+                    {
+                        "id": "analyze-pii-data",
+                        "title": "Analyze Text for PII",
+                        "description": "Analyze provided text for personally identifiable information (PII)",
+                        "prompt": "Please analyze this text for PII (emails, IP addresses, etc.) using regex-classifier:\n\n```\n{{text}}\n```"
+                    },
+                    {
+                        "id": "pii-assessment-report",
+                        "title": "Generate PII Assessment Report",
+                        "description": "Create a detailed report about PII found in a file or text",
+                        "prompt": "Based on the analysis results from regex-classifier, please create a detailed PII assessment report with:\n\n1. Executive summary of findings\n2. Breakdown of PII types discovered\n3. Risk assessment (low/medium/high) for each type\n4. Recommendations for data handling\n\nUse the information found in my previous analysis."
+                    },
+                    {
+                        "id": "data-anonymization-plan",
+                        "title": "Create Data Anonymization Plan",
+                        "description": "Generate a plan to anonymize or redact sensitive data",
+                        "prompt": "Based on the PII detected by regex-classifier, please create a data anonymization plan that includes:\n\n1. Which fields should be redacted completely\n2. Which fields should be tokenized/hashed\n3. Which fields can be partially masked (and how)\n4. Example code snippets for implementing these anonymization techniques"
+                    }
+                ]
             }
         }))
     }
