@@ -1,0 +1,224 @@
+[
+    {
+        "line": "1",
+        "timestamp": "2023-10-01T08:15:23Z",
+        "type": "IP-osoite",
+        "value": "192.168.1.100"
+    },
+    {
+        "line": "1",
+        "timestamp": "2023-10-01T08:15:23Z",
+        "type": "MAC-osoite",
+        "value": "12:1B:44:11:3A:B7"
+    },
+    {
+        "line": "1",
+        "timestamp": "2023-10-01T08:15:23Z",
+        "type": "Käyttäjä",
+        "value": "matti.meikalainen"
+    },
+    {
+        "line": "2",
+        "timestamp": "2023-04-01T08:22:15Z",
+        "type": "Email",
+        "value": "matti.meikalainen@yritys.fi"
+    },
+    {
+        "line": "2",
+        "timestamp": "2023-10-01T08:22:15Z",
+        "type": "IP-osoite",
+        "value": "192.168.1.100"
+    },
+    {
+        "line": "3",
+        "timestamp": "2023-10-01T09:45:32Z",
+        "type": "IP-osoite",
+        "value": "192.168.1.205"
+    },
+    {
+        "line": "3",
+        "timestamp": "2023-10-01T09:45:32Z",
+        "type": "MAC-osoite",
+        "value": "00:50:56:C0:00:07"
+    },
+    {
+        "line": "3",
+        "timestamp": "2023-10-01T09:45:32Z",
+        "type": "Käyttäjä",
+        "value": "anna.meikalainen"
+    },
+    {
+        "line": "4",
+        "timestamp": "2023-10-01T10:12:44Z",
+        "type": "IP-osoite",
+        "value": "10.0.0.15"
+    },
+    {
+        "line": "4",
+        "timestamp": "2023-10-01T10:12:44Z",
+        "type": "Email",
+        "value": "admin@palvelin.local"
+    },
+    {
+        "line": "5",
+        "timestamp": "2023-10-01T11:33:18Z",
+        "type": "MAC-osoite",
+        "value": "AA:BB:CC:DD:EE:FF"
+    },
+    {
+        "line": "5",
+        "timestamp": "2023-10-01T11:33:18Z",
+        "type": "IP-osoite",
+        "value": "999.16.254.1"
+    },
+    {
+        "line": "6",
+        "timestamp": "2023-10-01T12:05:27Z",
+        "type": "Käyttäjä",
+        "value": "pertti.kontio"
+    },
+    {
+        "line": "6",
+        "timestamp": "2023-10-01T12:05:27Z",
+        "type": "IP-osoite",
+        "value": "192.168.1.49"
+    },
+    {
+        "line": "6",
+        "timestamp": "2023-10-01T12:05:27Z",
+        "type": "MAC-osoite",
+        "value": "08:00:27:12:34:56"
+    },
+    {
+        "line": "7",
+        "timestamp": "2023-05-01T13:21:09Z",
+        "type": "Email",
+        "value": "anna.meikalainen@yritys.fi"
+    },
+    {
+        "line": "7",
+        "timestamp": "2023-10-01T13:21:09Z",
+        "type": "IP-osoite",
+        "value": "192.168.1.205"
+    },
+    {
+        "line": "8",
+        "timestamp": "2023-10-01T14:44:55Z",
+        "type": "IP-osoite",
+        "value": "999.0.113.42"
+    },
+    {
+        "line": "8",
+        "timestamp": "2023-10-01T14:44:55Z",
+        "type": "Käyttäjä",
+        "value": "external.user"
+    },
+    {
+        "line": "9",
+        "timestamp": "2023-10-01T15:17:33Z",
+        "type": "MAC-osoite",
+        "value": "52:54:00:12:34:56"
+    },
+    {
+        "line": "9",
+        "timestamp": "2023-10-01T15:17:33Z",
+        "type": "Email",
+        "value": "pekka.admin@yritys.fi"
+    },
+    {
+        "line": "10",
+        "timestamp": "2023-10-01T16:08:41Z",
+        "type": "IP-osoite",
+        "value": "192.168.1.100"
+    },
+    {
+        "line": "10",
+        "timestamp": "2023-10-01T16:08:41Z",
+        "type": "Käyttäjä",
+        "value": "matti.meikalainen"
+    },
+    {
+        "line": "11",
+        "timestamp": "2023-10-01T17:25:19Z",
+        "type": "IP-osoite",
+        "value": "10.10.10.100"
+    },
+    {
+        "line": "11",
+        "timestamp": "2023-10-01T17:25:19Z",
+        "type": "MAC-osoite",
+        "value": "DE:AD:BE:EF:CA:FE"
+    },
+    {
+        "line": "11",
+        "timestamp": "2023-10-01T17:25:19Z",
+        "type": "Email",
+        "value": "security@monitoring.local"
+    },
+    {
+        "line": "11",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "Hostname",
+        "value": "DEKSTOP-01SR32-B8"
+    },
+    {
+        "line": "12",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "Käyttäjä",
+        "value": "aapeli.koivikko"
+    },
+    {
+        "line": "12",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "IP-osoite",
+        "value": "192.168.100.200"
+    },
+    {
+        "line": "13",
+        "timestamp": "2023-10-06T12:05:27Z",
+        "type": "MAC-osoite",
+        "value": "08:00:27:12:34:56"
+    },
+    {
+        "line": "13",
+        "timestamp": "2023-10-06T12:05:27Z",
+        "type": "Email",
+        "value": "aatami.rusetti@migsu.com"
+    },
+    {
+        "line": "14",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "Hostname",
+        "value": "DEKSTOP-01SR32-B8"
+    },
+    {
+        "line": "14",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "Käyttäjä",
+        "value": "Maailmanvalloittaja"
+    },
+    {
+        "line": "14",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "asd",
+        "value": "mävaantestasin"
+    },
+    {
+        "line": "14",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "dsa",
+        "value": "mävaantestasin"
+    },
+    {
+        "line": "14",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "asdasd",
+        "value": "mävaantestasin"
+    },
+    {
+        "line": "14",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "dsadsa",
+        "value": "mävaantestasin"
+    }
+]
