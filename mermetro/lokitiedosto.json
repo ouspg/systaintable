@@ -9,7 +9,7 @@
         "line": "1",
         "timestamp": "2023-10-01T08:15:23Z",
         "type": "MAC-osoite",
-        "value": "11:1B:44:11:3A:B7"
+        "value": "12:1B:44:11:3A:B7"
     },
     {
         "line": "1",
@@ -69,7 +69,7 @@
         "line": "5",
         "timestamp": "2023-10-01T11:33:18Z",
         "type": "IP-osoite",
-        "value": "172.16.254.1"
+        "value": "999.16.254.1"
     },
     {
         "line": "6",
@@ -105,7 +105,7 @@
         "line": "8",
         "timestamp": "2023-10-01T14:44:55Z",
         "type": "IP-osoite",
-        "value": "203.0.113.42"
+        "value": "999.0.113.42"
     },
     {
         "line": "8",
@@ -201,6 +201,24 @@
         "line": "14",
         "timestamp": "2023-10-01T18:42:07Z",
         "type": "asd",
+        "value": "mävaantestasin"
+    },
+    {
+        "line": "14",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "dsa",
+        "value": "mävaantestasin"
+    },
+    {
+        "line": "14",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "asdasd",
+        "value": "mävaantestasin"
+    },
+    {
+        "line": "14",
+        "timestamp": "2023-10-01T18:42:07Z",
+        "type": "dsadsa",
         "value": "mävaantestasin"
     }
 ]

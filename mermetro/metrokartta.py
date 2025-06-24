@@ -48,6 +48,12 @@ def parse_identities(entry):
         identities.append(f'Hostname_{entry["value"].replace(".", "_")}([Hostname<br/>{entry["value"]}])')
     elif entry['type'] == 'asd':
         identities.append(f'ASD_{entry["value"].replace(" ", "_")}([ASD<br/>{entry["value"]}])')
+    elif entry['type'] == 'dsa':
+        identities.append(f'dsa_{entry["value"].replace(" ", "_")}([dsa<br/>{entry["value"]}])')
+    elif entry['type'] == 'asdasd':
+        identities.append(f'asdasd_{entry["value"].replace(" ", "_")}([asdasd<br/>{entry["value"]}])')
+    elif entry['type'] == 'dsadsa':
+        identities.append(f'dsadsa_{entry["value"].replace(" ", "_")}([dsadsa<br/>{entry["value"]}])')
     return identities
 
 def group_by_person(connections):
@@ -126,7 +132,7 @@ def generate_metromap_content(all_nodes, connections):
             processed_nodes.add(node)
             
         else:
-            # Järjestys: User > Email > IP > MAC > Hostname > etc
+            # Järjestys: User > Hostname > Email > IP > MAC > etc
             main_node = None
             
             # 1. Käyttäjä
@@ -135,31 +141,31 @@ def generate_metromap_content(all_nodes, connections):
                     main_node = node
                     break
             
-            # 2. Email
+            # 2. Hostname
+            if not main_node:
+                for node in group_list:
+                    if "Hostname_" in node:
+                        main_node = node
+                        break
+            
+            # 3. Email
             if not main_node:
                 for node in group_list:
                     if "Email_" in node:
                         main_node = node
                         break
             
-            # 3. IPv4
+            # 4. IPv4
             if not main_node:
                 for node in group_list:
                     if "IPv4_" in node:
                         main_node = node
                         break
             
-            # 4. MAC
+            # 5. MAC
             if not main_node:
                 for node in group_list:
                     if "MAC_" in node:
-                        main_node = node
-                        break
-            
-            # 5. Hostname
-            if not main_node:
-                for node in group_list:
-                    if "Hostname_" in node:
                         main_node = node
                         break
             
@@ -382,9 +388,10 @@ def index():
         import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
         mermaid.initialize({ startOnLoad: true });
         
-        setInterval(async function() {
+        // Eka haku heti kun sivu latautuu
+        async function updateMetromap() {
             try {
-                const response = await fetch('/api/metromap');
+                const response = await fetch('/api/metromap?t=' + Date.now());
                 const data = await response.json();
                 
                 if (data.metromap !== window.lastMetromap) {
@@ -392,13 +399,18 @@ def index():
                     document.getElementById('metromap-container').innerHTML = 
                         '<div class="mermaid">' + data.metromap + '</div>';
                     mermaid.init();
-
                     document.getElementById('timestamp').textContent = data.timestamp;
                 }
             } catch (error) {
                 console.error('Virhe päivityksessä:', error);
             }
-        }, 2000);
+        }
+        
+        // Sivu latautunut
+        updateMetromap();
+        
+        // Sen jälkeen 10 sekunnin välein
+        setInterval(updateMetromap, 10000);
     </script>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
@@ -474,6 +486,7 @@ def start_file_watcher():
     return observer
 
 def main():
+    print(" ")
     print("Käynnistetään metrokartta-palvelin")
     print(f"Aika: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
     process_json_file()
