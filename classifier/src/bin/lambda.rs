@@ -15,19 +15,18 @@ async fn process_s3_file(
     exclude: Option<&str>,
     sampling_rate: usize
 ) -> Result<Value, Error> {
-    // Initialize AWS SDK
+    // Set up S3 client
     let config = aws_config::load_from_env().await;
-    let client = aws_sdk_s3::Client::new(&config);
+    let s3_client = aws_sdk_s3::Client::new(&config);
     
-    // Get object from S3
-    let resp = client.get_object()
+    // Get the object from S3
+    let response = s3_client.get_object()
         .bucket(bucket)
         .key(key)
         .send()
         .await?;
     
-    // Read content
-    let data = resp.body.collect().await?;
+    let data = response.body.collect().await?.to_vec();
     let content = String::from_utf8(data.to_vec())?;
     
     let excluded_categories: Vec<String> = match exclude {
@@ -92,37 +91,34 @@ async fn process_s3_file(
                 total_classifications += 1;
             }
         }
-        
-        // Add other pattern types as needed
     }
     
-    // Prepare statistics
-    let mut category_stats: Vec<Value> = Vec::new();
-    let mut categories: Vec<_> = category_counts.iter().collect();
-    categories.sort_by(|a, b| b.1.cmp(a.1));
-    
-    for (category, count) in categories {
-        let percentage = if total_classifications > 0 {
-            ((*count as f64) / (total_classifications as f64) * 100.0).round()
-        } else {
-            0.0
-        };
-        
-        category_stats.push(json!({
+    // Build categories from counts
+    let mut categories = Vec::new();
+    for (category, count) in &category_counts {
+        categories.push(json!({
             "category": category,
             "count": count,
-            "percentage": percentage
+            "percentage": ((*count as f64) / (total_classifications as f64) * 100.0).round()
         }));
     }
     
+    // Sort categories by count (descending)
+    categories.sort_by(|a, b| {
+        let count_a = a["count"].as_u64().unwrap_or(0);
+        let count_b = b["count"].as_u64().unwrap_or(0);
+        count_b.cmp(&count_a)
+    });
+    
+    // Include found patterns as findings in the response
     Ok(json!({
-        "categories": found_patterns,
+        "categories": categories,
+        "findings": found_patterns,  // This is the key addition
         "summary": {
             "total_lines_processed": line_count,
             "total_classifications": total_classifications,
             "source": format!("s3://{}/{}", bucket, key)
-        },
-        "statistics": category_stats
+        }
     }))
 }
 
@@ -193,6 +189,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
             let tool_name = request_json["params"]["name"].as_str().unwrap_or("");
             eprintln!("Processing tool call: {}", tool_name);             
             if tool_name == "analyze_file" {
+                eprintln!("Found tool: analyze_file - processing with direct implementation");
                 let file_path = request_json["params"]["arguments"]["file_path"].as_str();
                 
                 if let Some(file_path) = file_path {
@@ -203,12 +200,96 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                     let exclude = request_json["params"]["arguments"]["exclude"].as_str();
                     let sample = request_json["params"]["arguments"]["sample"].as_u64().map(|x| x as usize).unwrap_or(1);
                     
-                    // Process the file
-                    match process_file_analysis(file_path, limit, exclude, sample).await {
+                    // Only allow S3 paths in Lambda
+                    if !file_path.starts_with("s3://") {
+                        let result = json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": {
+                                "content": [{
+                                    "type": "text",
+                                    "text": format!("ERROR: The file path '{}' is not accessible.\n\nOnly S3 paths (s3://bucket/key) are supported.", file_path)
+                                }]
+                            }
+                        });
+                        
+                        return Ok(Response::builder()
+                            .status(200)
+                            .header("Content-Type", "application/json")
+                            .body(result.to_string().into())?);
+                    }
+                    
+                    // Process the S3 file directly rather than calling process_file_analysis
+                    let parts: Vec<&str> = file_path.strip_prefix("s3://").unwrap().splitn(2, '/').collect();
+                    if parts.len() != 2 {
+                        let result = json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": {
+                                "content": [{
+                                    "type": "text",
+                                    "text": format!("ERROR: Invalid S3 path format: {}\n\nExpected: s3://bucket/key", file_path)
+                                }]
+                            }
+                        });
+                        
+                        return Ok(Response::builder()
+                            .status(200)
+                            .header("Content-Type", "application/json")
+                            .body(result.to_string().into())?);
+                    }
+                    
+                    // Process S3 file
+                    match process_s3_file(parts[0], parts[1], limit, exclude, sample).await {
                         Ok(stats) => {
                             // Format a nice response for Cursor
                             let mut analysis_text = format!("File Analysis Complete: {}\n\n", file_path);
-                            // Rest of your formatting code...
+        
+                            if let Some(summary) = stats.get("summary") {
+                                analysis_text.push_str(&format!("Processed {} lines, found {} classifications\n\n", 
+                                    summary["total_lines_processed"], 
+                                    summary["total_classifications"]));
+                            }
+                            
+                            // Add breakdown by category
+                            analysis_text.push_str("PII Categories Detected:\n");
+                            
+                            if let Some(categories) = stats["categories"].as_array() {
+                                if categories.is_empty() {
+                                    analysis_text.push_str("No PII detected in file\n");
+                                } else {
+                                    for category in categories {
+                                        if let (Some(cat_name), Some(count)) = (
+                                            category["category"].as_str(),
+                                            category["count"].as_u64()
+                                        ) {
+                                            analysis_text.push_str(&format!("• {}: {} occurrences\n", 
+                                                cat_name, count));
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Add detailed findings
+                            if let Some(findings) = stats["findings"].as_array() {
+                                if !findings.is_empty() {
+                                    analysis_text.push_str("\nDetailed Findings (sample):\n");
+                                    // Limit to first 25 findings to avoid overflow
+                                    let max_findings = 25.min(findings.len());
+                                    for i in 0..max_findings {
+                                        if let (Some(category), Some(value)) = (
+                                            findings[i]["category"].as_str(),
+                                            findings[i]["value"].as_str()
+                                        ) {
+                                            analysis_text.push_str(&format!("• {}: {}\n", category, value));
+                                        }
+                                    }
+                                    
+                                    if findings.len() > max_findings {
+                                        analysis_text.push_str(&format!("\n(Showing {}/{} findings)\n", max_findings, findings.len()));
+                                    }
+                                }
+                            }
                             
                             let result = json!({
                                 "jsonrpc": "2.0",
@@ -228,11 +309,11 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                                 .body(result.to_string().into())?);
                         },
                         Err(e) => {
-                            eprintln!("Error processing file: {}", e);
+                            eprintln!("Error processing S3 file: {}", e);
                             let error_response = json!({
                                 "jsonrpc": "2.0",
                                 "id": id,
-                                "result": { // Note: using "result" not "error" for Cursor compatibility
+                                "result": {
                                     "content": [{
                                         "type": "text",
                                         "text": format!("ERROR: Failed to process S3 file: {}\n\nPlease check that the file exists and is accessible.", e)
@@ -246,46 +327,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                                 .body(error_response.to_string().into())?);
                         }
                     }
-                }
-            }            
-            if tool_name == "get_upload_url" {
-                if let Some(file_name) = request_json["params"]["arguments"]["file_name"].as_str() {
-                    let bucket = std::env::var("S3_BUCKET").unwrap_or_else(|_| "regex-classifier-uploads".to_string());
-                    let key = format!("uploads/{}-{}", Uuid::new_v4(), file_name);
-                    
-                    match generate_presigned_url(&bucket, &key).await {
-                        Ok(url) => {
-                            let result = json!({
-                                "jsonrpc": "2.0",
-                                "id": id,
-                                "result": {
-                                    "upload_url": url,
-                                    "file_path": format!("s3://{}/{}", bucket, key)
-                                }
-                            });
-                            
-                            return Ok(Response::builder()
-                                .status(200)
-                                .header("Content-Type", "application/json")
-                                .body(result.to_string().into())?);
-                        },
-                        Err(e) => {
-                            let error = json!({
-                                "jsonrpc": "2.0",
-                                "id": id,
-                                "error": {
-                                    "code": -32000,
-                                    "message": format!("Failed to generate presigned URL: {}", e)
-                                }
-                            });
-                            
-                            return Ok(Response::builder()
-                                .status(500)
-                                .header("Content-Type", "application/json")
-                                .body(error.to_string().into())?);
-                        }
-                    }
-                }
+                } 
             } else if tool_name == "analyze_content" || tool_name == "analyze_text" {
                 eprintln!("Found tool: {} - processing with direct implementation", tool_name);
                 let content_param = if tool_name == "analyze_content" { "content" } else { "text" };
