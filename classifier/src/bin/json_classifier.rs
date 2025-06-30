@@ -5,6 +5,13 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use regex::Regex;
+use rayon::prelude::*;
+
+// Process chunks in parallel
+let chunk_size = 10_000;
+let results: Vec<_> = lines.par_chunks(chunk_size)
+    .map(|chunk| process_chunk(chunk))
+    .collect();
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Extract patterns from logs with JSON output")]
@@ -30,7 +37,9 @@ fn main() -> io::Result<()> {
     let file = File::open(&args.file_path)?;
     let reader = BufReader::with_capacity(1_000_000, file);
     
-    let timestamp_regex = Regex::new(r"(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)").unwrap();
+    // Define two timestamp patterns - ISO format and syslog format
+    let iso_timestamp_regex = Regex::new(r"(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)").unwrap();
+    let syslog_timestamp_regex = Regex::new(r"((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})").unwrap();
     
     // Process the file
     let mut findings = Vec::new();
@@ -44,9 +53,10 @@ fn main() -> io::Result<()> {
         
         let line = line_result?;
         
-        // Extract timestamp if present
-        let timestamp = timestamp_regex.captures(&line)
+        // Try both timestamp formats - ISO first, then syslog
+        let timestamp = iso_timestamp_regex.captures(&line)
             .and_then(|cap| cap.get(1))
+            .or_else(|| syslog_timestamp_regex.captures(&line).and_then(|cap| cap.get(1)))
             .map(|m| m.as_str().to_string())
             .unwrap_or_else(|| "".to_string());
         
@@ -76,7 +86,7 @@ fn main() -> io::Result<()> {
             findings.push(json!({
                 "line": line_count,
                 "timestamp": timestamp,
-                "type": "Hostname",
+                "type": "DNSname",
                 "value": dns
             }));
         }
@@ -91,7 +101,24 @@ fn main() -> io::Result<()> {
             }));
         }
         
-        // You can add more pattern types as needed
+        // Usernames (from SSH logs, etc.)
+        for username in extraction::username::extract_usernames(&line) {
+            findings.push(json!({
+                "line": line_count,
+                "timestamp": timestamp,
+                "type": "Username",
+                "value": username
+            }));
+        }
+        
+        for tty in extraction::tty::extract_ttys(&line) {
+            findings.push(json!({
+                "line": line_count,
+                "timestamp": timestamp,
+                "type": "TTY",
+                "value": tty
+            }));
+        }
     }
     
     // Write JSON output

@@ -8,6 +8,7 @@ pub mod pid;
 pub mod time;
 pub mod tty;
 pub mod url;
+pub mod username;
 
 // We'll create these additional modules later if needed
 // pub mod domain;
