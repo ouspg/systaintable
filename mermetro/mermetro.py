@@ -192,6 +192,7 @@ def group_by_person(connections):
                 b_value = b_value.split('?')[0]
             
             group_merge_log[group_id].append(f"({a_value} , {b_value}) -> group")
+            print(f"{a_value} and {b_value} joined group {group_id}")
             
         else:
             person_groups.append({a, b})
@@ -212,6 +213,7 @@ def group_by_person(connections):
                 b_value = b_value.split('?')[0]
             
             group_merge_log[group_id].append(f"({a_value} , {b_value}) = new group")
+            print(f"{a_value} and {b_value} formed a group {group_id}")
         
         processed.add(a)
         processed.add(b)
@@ -424,6 +426,7 @@ def process_json_file():
                 for i in range(len(all_line_ids)):
                     for j in range(i+1, len(all_line_ids)):
                         connections.append((all_line_ids[i], all_line_ids[j]))
+                        print(f"Luotu tuple ({all_line_ids[i]}) , ({all_line_ids[j]})")
         
         updated_nodes = set()
         node_details = {}
@@ -595,22 +598,29 @@ def api_search(search_term):
     search_lower = search_term.lower()
     
     is_timestamp_search = search_term.startswith('"') and search_term.endswith('"')
-    
+    is_combined_search = ' "' in search_term and search_term.endswith('"')
+
     if is_timestamp_search:
         clean_search_term = search_term[1:-1]
+    elif is_combined_search:
+        parts = search_term.split(' "')
+        text_part = parts[0].lower()
+        time_part = parts[1][:-1]
     else:
         clean_search_term = search_term
     
     for node_id, details in node_details.items():
         if details.get('type', '') != 'Group':
-            if not is_timestamp_search and search_lower in details.get('value', '').lower():
-                display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')}"
-                results.append({
-                    'node_id': node_id,
-                    'display_text': display_text,
-                    'match_type': 'primary'
-                })
-                continue
+            if not is_timestamp_search:
+                search_value = text_part if is_combined_search else search_lower
+                if search_value in details.get('value', '').lower():
+                    display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')}"
+                    results.append({
+                        'node_id': node_id,
+                        'display_text': display_text,
+                        'match_type': 'primary'
+                    })
+                    continue
             
         found_in_entries = False
         if 'entries' in details:
@@ -620,6 +630,11 @@ def api_search(search_term):
                 if is_timestamp_search:
                     entry_time = entry.get('formatted_time', '')
                     if clean_search_term in entry_time:
+                        match_found = True
+                elif is_combined_search:
+                    entry_time = entry.get('formatted_time', '')
+                    entry_value = entry.get('value', '').lower()
+                    if text_part in entry_value and time_part in entry_time:
                         match_found = True
                 else:
                     if search_lower in entry.get('value', '').lower():
@@ -633,6 +648,8 @@ def api_search(search_term):
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Date match: {entry_time})"
                         elif ':' in clean_search_term and '.' not in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Time match: {entry_time})"
+                    elif is_combined_search:
+                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {entry_value} at {entry_time})"
                     else:
                         display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (part of group)"
                     
@@ -643,8 +660,7 @@ def api_search(search_term):
                     })
                     found_in_entries = True
                     break
-        
-        # Etsitään teknisistä
+
         if not found_in_entries and 'technical_entries' in details:
             for entry in details['technical_entries']:
                 match_found = False
@@ -652,6 +668,11 @@ def api_search(search_term):
                 if is_timestamp_search:
                     entry_time = entry.get('formatted_time', '')
                     if clean_search_term in entry_time:
+                        match_found = True
+                elif is_combined_search:
+                    entry_time = entry.get('formatted_time', '')
+                    entry_value = entry.get('value', '').lower()
+                    if text_part in entry_value and time_part in entry_time:
                         match_found = True
                 else:
                     if search_lower in entry.get('value', '').lower():
@@ -665,6 +686,8 @@ def api_search(search_term):
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Date match: {entry_time} (technical entry))"
                         elif ':' in clean_search_term and '.' not in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Time match: {entry_time} (technical entry))"
+                    elif is_combined_search:
+                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {text_part} at {time_part} in technical)"
                     else:
                         display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (found in technical entries)"
                     
