@@ -20,6 +20,8 @@
                 cleanId = cleanId.substring(10);
             }
             
+            window.currentGroupId = cleanId;
+            
             fetch('/api/node-details/' + cleanId)
                 .then(response => response.json())
                 .then(data => {
@@ -38,9 +40,8 @@
             if (nodeData.type === 'Group') {
                 let groupNumber = '?';
                 if (window.currentGroupId) {
-                    const parts = window.currentGroupId.split('_');
-                    if (parts.length >= 2) {
-                        groupNumber = parts[1].split('-')[0];
+                    if (window.currentGroupId.startsWith('ID_')) {
+                        groupNumber = window.currentGroupId.split('-')[0].split('_')[1];
                     }
                 }
                 
@@ -130,7 +131,6 @@
                 modalContent.innerHTML = content;
             } else {
                 modalTitle.textContent = `${nodeData.type}: ${nodeData.value}`;
-                            // Uusi hakutoiminnallisuus
                 const personalCount = nodeData.entries ? nodeData.entries.length : 0;
                 const technicalCount = nodeData.technical_entries ? nodeData.technical_entries.length : 0;
                 const totalCount = personalCount + technicalCount;
@@ -592,7 +592,6 @@
             margin-bottom: 15px;
         }
 
-        /* Uusi tyyli hakupalkille - poistettu duplikaatti */
         .search-container input[type="text"] {
             width: auto;
             max-width: 400px;
@@ -655,11 +654,13 @@
         <p>Updated: <span id="timestamp">{{ timestamp }}</span></p>
 
         <div class="search-container">
-            <input type="text" id="searchInput" placeholder='192.168.0.1 , "16.12 at 12:34:56"'>
+            <input type="text" id="searchInput" placeholder='192.168.0.1, "16.12 at 12:34:56"'>
             <button id="searchButton">Search</button>
             <span class="info-tooltip">
                 ?
-                <span class="tooltip-text">For timestamp search, add "". e.g. "16.12"</span>
+                <span class="tooltip-text">For normal search, type value e.g 8.8.8.8
+                    For timestamp search, add "" e.g. "16.12"
+                For combined search, use 8.8.8.8 "16.12"</span>
             </span>
             <div id="searchResults"></div>
         </div>
