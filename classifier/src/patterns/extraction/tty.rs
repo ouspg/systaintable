@@ -29,6 +29,14 @@ pub fn extract_ttys(text: &str) -> Vec<String> {
         results.push(cap[0].to_string());
     }
     
+    // Extract TTY key-value pairs (like tty=ssh)
+    let tty_kv = Regex::new(r"\btty=(\S+)\b").unwrap();
+    for cap in tty_kv.captures_iter(text) {
+        if let Some(m) = cap.get(1) {
+            results.push(format!("tty={}", m.as_str()));
+        }
+    }
+
     results
 }
 
