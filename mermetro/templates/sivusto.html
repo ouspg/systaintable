@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Summary</title>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ 
+            startOnLoad: false,
+            flowchart: { useMaxWidth: true, htmlLabels: true },
+            securityLevel: 'loose'
+        });
+        
+        let currentMetromap = '';
+        
+        window.showNodeDetails = function(nodeId) {
+            window.currentId = nodeId;
+            
+            let cleanId = nodeId;
+            if (cleanId.startsWith('flowchart-')) {
+                cleanId = cleanId.substring(10);
+            }
+            
+            fetch('/api/node-details/' + cleanId)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.error) {
+                        showModal(data);
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        };
+        
+        function showModal(nodeData) {
+            const modal = document.getElementById('nodeModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalContent = document.getElementById('modalContent');
+            
+            if (nodeData.type === 'Group') {
+                let groupNumber = '?';
+                if (window.currentGroupId) {
+                    const parts = window.currentGroupId.split('_');
+                    if (parts.length >= 2) {
+                        groupNumber = parts[1].split('-')[0];
+                    }
+                }
+                
+                modalTitle.textContent = `ID: ${groupNumber}`;
+                
+                const personalCount = nodeData.entries ? nodeData.entries.length : 0;
+                const technicalCount = nodeData.technical_entries ? nodeData.technical_entries.length : 0;
+                const totalCount = personalCount + technicalCount;
+                
+                const uniqueValues = nodeData.entries ? 
+                    [...new Set(nodeData.entries.map(entry => entry.value))] : [];
+                
+                const nodeListHtml = uniqueValues.length > 0 ? 
+                    uniqueValues.map(value => `• ${value}`).join('<br/>') : 'N/A';
+                
+                let content = `
+                    <div class="detail-section">
+                        <p><strong>Entries:</strong> ${nodeData.value}</p>
+                        <p><strong>Every group unique entry:</strong><br/>${nodeListHtml}</p>
+                        <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Technical: ${technicalCount})</p>
+                        <p><strong>Oldest:</strong> ${nodeData.first_seen}</p>
+                        <p><strong>Latest:</strong> ${nodeData.last_seen}</p>
+                    </div>
+                `;
+                
+                if (nodeData.merge_log && nodeData.merge_log.length > 0) {
+                    content += `
+                        <div class="detail-section">
+                            <h4>Group formation:</h4>
+                            <p style="font-family: monospace; font-size: 12px; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+                                ${nodeData.merge_log.join('<br/>')}
+                            </p>
+                        </div>
+                    `;
+                }
+                
+                content += `
+                    <div class="detail-section">
+                        <h4>Every unique entry:</h4>
+                        <table class="entries-table">
+                            <thead>
+                                <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                nodeData.entries.forEach((entry, index) => {
+                    content += `
+                        <tr>
+                            <td><strong>${index + 1}</strong></td>
+                            <td><strong>${entry.line}</strong></td>
+                            <td>${entry.formatted_time}</td>
+                            <td>${entry.type}</td>
+                            <td>${entry.value}</td>
+                        </tr>
+                    `;
+                });
+                
+                content += '</tbody></table></div>';
+                
+                if (nodeData.technical_entries && nodeData.technical_entries.length > 0) {
+                    content += `
+                        <div class="detail-section technical-section">
+                            <p><strong>Every technical entry:</strong></p>
+                            <table class="entries-table technical-table">
+                                <thead>
+                                    <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
+                                </thead>
+                                <tbody>
+                    `;
+                    
+                    nodeData.technical_entries.forEach((entry, index) => {
+                        content += `
+                            <tr>
+                                <td><strong>${index + 1}</strong></td>
+                                <td><strong>${entry.line}</strong></td>
+                                <td>${entry.formatted_time}</td>
+                                <td>${entry.type}</td>
+                                <td>${entry.value}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    content += '</tbody></table></div>';
+                }
+                
+                modalContent.innerHTML = content;
+            } else {
+                modalTitle.textContent = `${nodeData.type}: ${nodeData.value}`;
+                            // Uusi hakutoiminnallisuus
+                const personalCount = nodeData.entries ? nodeData.entries.length : 0;
+                const technicalCount = nodeData.technical_entries ? nodeData.technical_entries.length : 0;
+                const totalCount = personalCount + technicalCount;
+                
+                let content = `
+                    <div class="detail-section">
+                        <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Technical: ${technicalCount})</p>
+                        <p><strong>Oldest:</strong> ${nodeData.first_seen}</p>
+                        <p><strong>Latest:</strong> ${nodeData.last_seen}</p>
+                    </div>
+                    
+                    <div class="detail-section">
+                        <h4>
+                            Unique entries:
+                            <span class="info-tooltip">
+                                ?
+                                <span class="tooltip-text">When has this exact entry appeared in the log file?</span>
+                            </span>
+                        </h4>
+                        <table class="entries-table">
+                            <thead>
+                                <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                nodeData.entries.forEach((entry, index) => {
+                    content += `
+                        <tr>
+                            <td><strong>${index + 1}</strong></td>
+                            <td><strong>${entry.line}</strong></td>
+                            <td>${entry.formatted_time}</td>
+                            <td>${entry.type}</td>
+                            <td>${entry.value}</td>
+                        </tr>
+                    `;
+                });
+                
+                content += '</tbody></table></div>';
+                
+                if (nodeData.technical_entries && nodeData.technical_entries.length > 0) {
+                    content += `
+                        <div class="detail-section technical-section">
+                            <p>
+                                <strong>Technical entries</strong>
+                                <span class="info-tooltip">
+                                    ?
+                                    <span class="tooltip-text">What has this exact entry done? / With which (non-unique/non-individual/non-identifiable) entries has it appeared?</span>
+                                </span>
+                            </p>
+                            <table class="entries-table technical-table">
+                                <thead>
+                                    <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
+                                </thead>
+                                <tbody>
+                    `;
+                    
+                    nodeData.technical_entries.forEach((entry, index) => {
+                        content += `
+                            <tr>
+                                <td><strong>${index + 1}</strong></td>
+                                <td><strong>${entry.line}</strong></td>
+                                <td>${entry.formatted_time}</td>
+                                <td>${entry.type}</td>
+                                <td>${entry.value}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    content += '</tbody></table></div>';
+                }
+                
+                modalContent.innerHTML = content;
+            }
+            
+            modal.style.display = 'block';
+        }
+        
+        function addClickEvents() {
+            const oldClickable = document.querySelectorAll('.clickable-node');
+            oldClickable.forEach(el => el.classList.remove('clickable-node'));
+            
+            const allElements = document.querySelectorAll('.mermaid svg g[id]');
+            
+            allElements.forEach((element) => {
+                if (element.id) {
+                    element.classList.add('clickable-node');
+                    
+                    if (!element.dataset.clickAdded) {
+                        element.dataset.clickAdded = 'true';
+                        element.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            showNodeDetails(element.id);
+                        });
+                    }
+                }
+            });
+        }
+        
+        async function updateMetromap() {
+            try {
+                const response = await fetch('/api/metromap?t=' + Date.now());
+                const data = await response.json();
+                
+                if (data.metromap !== currentMetromap) {
+                    currentMetromap = data.metromap;
+                    const container = document.getElementById('metromap-container');
+                    container.innerHTML = '<div class="mermaid">' + currentMetromap + '</div>';
+                    
+                    await mermaid.run({ querySelector: '.mermaid' });
+                    
+                    setTimeout(addClickEvents, 100);
+                    
+                    document.getElementById('timestamp').textContent = data.timestamp;
+                }
+            } catch (error) {
+                console.error('Update error:', error);
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            updateMetromap();
+            
+            const modal = document.getElementById('nodeModal');
+            const closeBtn = document.getElementsByClassName('close')[0];
+            
+            if (closeBtn) {
+                closeBtn.onclick = () => modal.style.display = 'none';
+            }
+            
+            window.onclick = function(event) {
+                if (event.target == modal) {
+                    modal.style.display = 'none';
+                }
+            }
+            
+            const searchInput = document.getElementById('searchInput');
+            const searchButton = document.getElementById('searchButton');
+            const searchResults = document.getElementById('searchResults');
+            
+            function performSearch() {
+                const searchTerm = searchInput.value.trim();
+                if (!searchTerm) {
+                    searchResults.innerHTML = '';
+                    return;
+                }
+                
+                fetch('/api/search/' + encodeURIComponent(searchTerm))
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.results && data.results.length > 0) {
+                            if (data.results.length === 1) {
+                                const result = data.results[0];
+                                showNodeDetails(result.node_id);
+                                searchResults.innerHTML = `<div class="search-result">Found: ${result.display_text}</div>`;
+                            } else {
+                                searchResults.innerHTML = `
+                                    <div class="search-multiple">Found ${data.results.length} matches:</div>
+                                    ${data.results.map(result => 
+                                        `<div class="search-result" onclick="showNodeDetails('${result.node_id}')">
+                                            ${result.display_text}
+                                        </div>`
+                                    ).join('')}
+                                `;
+                            }
+                        } else {
+                            searchResults.innerHTML = '<div class="search-no-results">No results found</div>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Search error:', error);
+                        searchResults.innerHTML = '<div class="search-no-results">Search error occurred</div>';
+                    });
+            }
+            
+            searchButton.addEventListener('click', performSearch);
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    performSearch();
+                }
+            });
+            
+            searchInput.addEventListener('input', function() {
+                if (!searchInput.value.trim()) {
+                    searchResults.innerHTML = '';
+                }
+            });
+        });
+        
+        setInterval(updateMetromap, 10000);
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .status { color: #4CAF50; font-weight: bold; }
+        .mermaid { text-align: center; background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        .info { background-color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        
+        .search-container {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            position: relative;
+        }
+        
+        #searchInput {
+            flex: 1;
+            min-width: 250px;
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        
+        #searchInput:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+        
+        #searchButton {
+            padding: 8px 16px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+        }
+        
+        #searchButton:hover {
+            background-color: #1976D2;
+        }
+        
+        #searchResults {
+            width: 100%;
+            margin-top: 10px;
+            font-size: 14px;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            z-index: 1000;
+        }
+        
+        .search-result {
+            background-color: #e3f2fd;
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid #2196F3;
+        }
+        
+        .search-result:hover {
+            background-color: #bbdefb;
+        }
+        
+        .search-no-results {
+            color: #f44336;
+            font-style: italic;
+            padding: 8px 0;
+        }
+        
+        .search-multiple {
+            color: #ff9800;
+            font-weight: bold;
+            padding: 8px 0;
+        }
+        
+        .mermaid svg g.clickable-node:hover { opacity: 0.8; cursor: pointer !important; }
+        .mermaid svg g.clickable-node * { cursor: pointer !important; }
+        
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: none; border-radius: 10px; width: 80%; max-width: 800px; max-height: 80vh; overflow-y: auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close:hover, .close:focus { color: black; }
+        .detail-section { margin-bottom: 20px; }
+        .detail-section h4 { color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 5px; margin-top: 0; }
+        .detail-section p { color: #333; font-weight: normal; word-wrap: break-word; overflow-wrap: break-word; }
+        .entries-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 10px; 
+            font-family: inherit; 
+            table-layout: fixed;
+        }
+        .entries-table th, .entries-table td { 
+            border: 1px solid #ddd; 
+            padding: 8px; 
+            text-align: left; 
+            color: #333;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            vertical-align: top;
+        }
+        .entries-table th { 
+            background-color: #2196F3; 
+            color: white; 
+            font-weight: bold; 
+        }
+        .entries-table tr:nth-child(even) { background-color: #f2f2f2; }
+        .entries-table tr:hover { background-color: #e3f2fd; }
+        .entries-table th:first-child { 
+            width: 60px; 
+            text-align: center; 
+            background-color: #1976D2; 
+        }
+        .entries-table th:nth-child(2) { 
+            width: 90px; 
+        }
+        .entries-table th:nth-child(3) { 
+            width: 140px; 
+        }
+        .entries-table th:nth-child(4) { 
+            width: 120px; 
+        }
+        .entries-table th:nth-child(5) { 
+            width: calc(100% - 410px);
+            min-width: 200px;
+        }
+        .entries-table td:first-child { 
+            text-align: center; 
+            font-weight: bold; 
+            color: #1976D2; 
+        }
+        .entries-table td:nth-child(2) { 
+            text-align: center; 
+            font-weight: bold; 
+            color: #1976D2; 
+        }
+        .entries-table td:nth-child(5) {
+            word-break: break-all;
+            hyphens: auto;
+            max-width: 200px;
+        }
+        
+        .technical-section { margin-top: 20px; padding-top: 15px; }
+        .technical-section p { 
+            border-bottom: 2px solid #FF9800; 
+            padding-bottom: 10px; 
+            margin-bottom: 15px;
+            word-wrap: break-word;
+        }
+        .technical-table th { 
+            background-color: #FF9800; 
+            color: white; 
+        }
+        .technical-table th:first-child { 
+            background-color: #F57C00; 
+        }
+        .technical-table th, .technical-table td {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            vertical-align: top;
+        }
+        .technical-table th:first-child { 
+            width: 60px; 
+        }
+        .technical-table th:nth-child(2) { 
+            width: 90px; 
+        }
+        .technical-table th:nth-child(3) { 
+            width: 140px; 
+        }
+        .technical-table th:nth-child(4) { 
+            width: 120px; 
+        }
+        .technical-table th:nth-child(5) { 
+            width: calc(100% - 410px);
+            min-width: 200px;
+        }
+        .technical-table td:nth-child(2) { 
+            text-align: center; 
+            font-weight: bold; 
+            color: #F57C00; 
+        }
+        .technical-table td:first-child { 
+            color: #F57C00; 
+            text-align: center;
+            font-weight: bold;
+        }
+        .technical-table td:nth-child(5) {
+            word-break: break-all;
+            hyphens: auto;
+            max-width: 200px;
+        }
+        .technical-table tr:hover { background-color: #fff3e0; }
+        
+        .info-tooltip {
+            position: relative;
+            display: inline-block;
+            background-color: #2196F3;
+            color: white;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: bold;
+            line-height: 16px;
+            cursor: help;
+            margin-left: 5px;
+            vertical-align: top;
+        }
+        
+        .info-tooltip:hover {
+            background-color: #1976D2;
+        }
+        
+        .tooltip-text {
+            visibility: hidden;
+            width: 250px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1001;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -125px;
+            font-size: 13px;
+            font-weight: normal;
+            line-height: 1.3;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+        
+        .info-tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        #modalTitle {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-all;
+            hyphens: auto;
+            max-width: 100%;
+            line-height: 1.3;
+            color: #333;
+            border-bottom: 2px solid #2196F3;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+
+        /* Uusi tyyli hakupalkille - poistettu duplikaatti */
+        .search-container input[type="text"] {
+            width: auto;
+            max-width: 400px;
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            font-family: inherit;
+            margin-bottom: 0;
+        }
+        
+        .search-container button {
+            padding: 8px 16px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+        }
+        
+        .search-container button:hover {
+            background-color: #1976D2;
+        }
+        
+        .search-results {
+            width: 100%;
+            max-width: 400px;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 5px;
+            z-index: 1000;
+            position: absolute;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .search-results div {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+        }
+        
+        .search-results div:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .search-results div:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Summary of log file</h1>
+    <div class="info">
+        <p class="status">Updates automatically when JSON-file is modified</p>
+        <p>Updated: <span id="timestamp">{{ timestamp }}</span></p>
+
+        <div class="search-container">
+            <input type="text" id="searchInput" placeholder='192.168.0.1 , "16.12 at 12:34:56"'>
+            <button id="searchButton">Search</button>
+            <span class="info-tooltip">
+                ?
+                <span class="tooltip-text">For timestamp search, add "". e.g. "16.12"</span>
+            </span>
+            <div id="searchResults"></div>
+        </div>
+    </div>
+    
+    <div id="metromap-container">
+        <div class="mermaid">{{ metromap|safe }}</div>
+    </div>
+    
+    <div id="nodeModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modalTitle"></h2>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+</body>
+</html>

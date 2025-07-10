@@ -1,0 +1,11 @@
+8.8.8.8
+8.8.4.4
+1.1.1.1
+localhost
+www.google.com
+www.microsoft.com
+clients1.google.com
+clients3.google.com
+google.com
+time.google.com
+tools.google.com
