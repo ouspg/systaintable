@@ -7,7 +7,9 @@
         mermaid.initialize({ 
             startOnLoad: false,
             flowchart: { useMaxWidth: true, htmlLabels: true },
-            securityLevel: 'loose'
+            securityLevel: 'loose',
+            maxTextSize: 100000000,
+            maxEdges: 50000
         });
         
         let currentMetromap = '';
@@ -654,7 +656,7 @@
         <p>Updated: <span id="timestamp">{{ timestamp }}</span></p>
 
         <div class="search-container">
-            <input type="text" id="searchInput" placeholder='192.168.0.1, "16.12 at 12:34:56"'>
+            <input type="text" id="searchInput" placeholder='192.168.0.1 "16.12 at 12:34:56"'>
             <button id="searchButton">Search</button>
             <span class="info-tooltip">
                 ?

@@ -246,7 +246,7 @@ def group_by_person(connections):
             if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
                 b_value = b_value.split('?')[0]
                 
-            group_merge_log[group_id].append(f"({a_value} , {b_value}) -> added to group")
+            group_merge_log[group_id].append(f"ADDED: ({a_value} , {b_value}) -> added to group")
             print(f"{a_value} and {b_value} joined group {group_id}")
         elif groups_with_b:
             # Vain b on ryhmässä, lisätään a
@@ -265,7 +265,7 @@ def group_by_person(connections):
             if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
                 b_value = b_value.split('?')[0]
                 
-            group_merge_log[group_id].append(f"({a_value} , {b_value}) -> added to group")
+            group_merge_log[group_id].append(f"ADDED: ({a_value} , {b_value}) -> added to group")
             print(f"{a_value} and {b_value} joined group {group_id}")
         else:
             # Kumpikaan ei ole ryhmässä, luodaan uusi
@@ -284,7 +284,7 @@ def group_by_person(connections):
             if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
                 b_value = b_value.split('?')[0]
                 
-            group_merge_log[group_id].append(f"({a_value} , {b_value}) = new group")
+            group_merge_log[group_id].append(f"FORMED: ({a_value} , {b_value}) = new group")
             print(f"{a_value} and {b_value} formed a group {group_id}")
 
     return person_groups
