@@ -128,7 +128,7 @@ def parse_identities(entry):
         'IP': f'IPv4_{value.replace(".", "_")}([IP-Address<br/>{value}])',
         'DNSname': f'DNS_{value.replace(".", "_")}([DNSname<br/>{value}])',
         'MAC-osoite': f'MAC_{value.replace(":", "_")}([MAC-Address<br/>{value}])',
-        'Username': f'User_{value.replace(" ", "_")}([User<br/>{value}])',
+        'Username': f'User_{value.replace(" ", "_").replace("@", "_").replace("%", "_")}([User<br/>{value}])',
         'Email': f'Email_{value.replace("@", "_AT_").replace(".", "_")}([Email<br/>{value}])',
         'Hostname': f'Hostname_{value.replace(".", "_")}([Hostname<br/>{value}])',
         'TTY': f'TTY_{value.replace(" ", "_").replace("=", "_")}([TTY<br/>{value}])',
