@@ -123,17 +123,19 @@ def parse_identities(entry):
         
         identities.append(f'URL_{url_id}([URL<br/>{display_url}])')
         return identities
+    else:
+        clean_value = value.replace(" ", "_").replace("@", "_AT_").replace("%", "_").replace(":", "_").replace(".", "_").replace("=", "_")
     
     type_mapping = {
-        'IP': f'IPv4_{value.replace(".", "_")}([IP-Address<br/>{value}])',
-        'DNSname': f'DNS_{value.replace(".", "_")}([DNSname<br/>{value}])',
-        'MAC-osoite': f'MAC_{value.replace(":", "_")}([MAC-Address<br/>{value}])',
-        'Username': f'User_{value.replace(" ", "_").replace("@", "_").replace("%", "_")}([User<br/>{value}])',
-        'Email': f'Email_{value.replace("@", "_AT_").replace(".", "_")}([Email<br/>{value}])',
-        'Hostname': f'Hostname_{value.replace(".", "_")}([Hostname<br/>{value}])',
-        'TTY': f'TTY_{value.replace(" ", "_").replace("=", "_")}([TTY<br/>{value}])',
-        'Example': f'Example_{value.replace(" ", "_")}([Example<br/>{value}])',
-        'Example2': f'Example2_{value.replace(" ", "_")}([Example2<br/>{value}])',
+        'IP': f'IPv4_{clean_value}([IP-Address<br/>{value}])',
+        'DNSname': f'DNS_{clean_value}([DNSname<br/>{value}])',
+        'MAC-osoite': f'MAC_{clean_value}([MAC-Address<br/>{value}])',
+        'Username': f'User_{clean_value}([User<br/>{value}])',
+        'Email': f'Email_{clean_value}([Email<br/>{value}])',
+        'Hostname': f'Hostname_{clean_value}([Hostname<br/>{value}])',
+        'TTY': f'TTY_{clean_value}([TTY<br/>{value}])',
+        'Example': f'Example_{clean_value}([Example<br/>{value}])',
+        'Example2': f'Example2_{clean_value}([Example2<br/>{value}])',
     }
     
     if entry_type in type_mapping:
