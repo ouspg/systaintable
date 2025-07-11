@@ -143,81 +143,150 @@ def parse_identities(entry):
 
 def group_by_person(connections):
     """
-    Luo henkilöryhmiä yhteyksien perusteella
-    DEBUG: Processed setti voi tuottaa ongelmia, tarkista logiikka mikäli
-    ongelmia ryhmien muodostuksessa ilmenee (eli jos ryhmiä on liikaa).
-    connections = [
-    ('User_A', 'IP_1'),      # A ja IP_1 > processed
-    ('User_B', 'IP_2'),      # B ja IP_2 > processed  
-    ('User_A', 'User_B')     # MOLEMMAT JO processed > ohitetaan
-    eli ei yhdistä näitä kaikkia vaikka pitäisi.
+    Luodaan henkilöryhmiä yhteyksien perusteella
     """
     global group_merge_log
     group_merge_log = {}
-    
+
     person_groups = []
-    processed = set()
     group_counter = 0
-    
+
     for a, b in connections:
-        if a in processed and b in processed:
-            continue
-            
-        found_group = None
-        found_group_index = None
+        groups_with_a = []
+        groups_with_b = []
+
         for i, group in enumerate(person_groups):
-            if a in group or b in group:
-                found_group = group
-                found_group_index = i
-                break
-        
-        if found_group:
-            found_group.add(a)
-            found_group.add(b)
-            
-        # Muodostetaan group formation loki
-            group_id = f"ID_{found_group_index + 1}"
+            if a in group:
+                groups_with_a.append(i)
+            if b in group:
+                groups_with_b.append(i)
+
+        if groups_with_a and groups_with_b:
+            if groups_with_a[0] == groups_with_b[0]:
+                group_id = f"ID_{groups_with_a[0] + 1}"
+                if group_id not in group_merge_log:
+                    group_merge_log[group_id] = []
+                a_key = a.split('(')[0]
+                b_key = b.split('(')[0]
+                a_value = node_details.get(a_key, {}).get('value', a_key)
+                b_value = node_details.get(b_key, {}).get('value', b_key)
+                
+                if node_details.get(a_key, {}).get('type') == 'URL' and '?' in a_value:
+                    a_value = a_value.split('?')[0]
+                if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
+                    b_value = b_value.split('?')[0]
+                    
+                continue
+            else:
+                # Eri ryhmät, yhdistetään
+                group_a_idx = groups_with_a[0]
+                group_b_idx = groups_with_b[0]
+                group_a = person_groups[group_a_idx]
+                group_b = person_groups[group_b_idx]
+                
+                group_a_members = []
+                group_b_members = []
+                
+                for member in group_a:
+                    member_key = member.split('(')[0]
+                    member_value = node_details.get(member_key, {}).get('value', member_key)
+                    if node_details.get(member_key, {}).get('type') == 'URL' and '?' in member_value:
+                        member_value = member_value.split('?')[0]
+                    group_a_members.append(member_value)
+                
+                for member in group_b:
+                    member_key = member.split('(')[0]
+                    member_value = node_details.get(member_key, {}).get('value', member_key)
+                    if node_details.get(member_key, {}).get('type') == 'URL' and '?' in member_value:
+                        member_value = member_value.split('?')[0]
+                    group_b_members.append(member_value)
+                
+                group_a.update(group_b)
+                del person_groups[group_b_idx]
+                group_id = f"ID_{group_a_idx + 1}"
+                if group_id not in group_merge_log:
+                    group_merge_log[group_id] = []
+                a_key = a.split('(')[0]
+                b_key = b.split('(')[0]
+                a_value = node_details.get(a_key, {}).get('value', a_key)
+                b_value = node_details.get(b_key, {}).get('value', b_key)
+                
+                if node_details.get(a_key, {}).get('type') == 'URL' and '?' in a_value:
+                    a_value = a_value.split('?')[0]
+                if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
+                    b_value = b_value.split('?')[0]
+                
+                group_a_str = ", ".join(group_a_members)
+                group_b_str = ", ".join(group_b_members)
+                
+                detailed_log = f"MERGED: Group A [{group_a_str}]\n + \nGroup B [{group_b_str}] \nbecause of tuple ({a_value} , {b_value})"
+                group_merge_log[group_id].append(detailed_log)
+                
+                print(f"MERGED GROUPS {group_id}:")
+                print(f"  Reason: {a_value} <-> {b_value}")
+                print(f"  Group A had: {group_a_str}")
+                print(f"  Group B had: {group_b_str}")
+                print(f"  Result: All combined into {group_id}")
+                print("-" * 50)
+                    
+        elif groups_with_a:
+            # Vain a on ryhmässä, lisätään b
+            idx = groups_with_a[0]
+            person_groups[idx].add(b)
+            group_id = f"ID_{idx + 1}"
             if group_id not in group_merge_log:
                 group_merge_log[group_id] = []
-            
             a_key = a.split('(')[0]
             b_key = b.split('(')[0]
-            
             a_value = node_details.get(a_key, {}).get('value', a_key)
             b_value = node_details.get(b_key, {}).get('value', b_key)
             
-            if '?' in a_value:
+            if node_details.get(a_key, {}).get('type') == 'URL' and '?' in a_value:
                 a_value = a_value.split('?')[0]
-            if '?' in b_value:
+            if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
                 b_value = b_value.split('?')[0]
-            
-            group_merge_log[group_id].append(f"({a_value} , {b_value}) -> group")
+                
+            group_merge_log[group_id].append(f"({a_value} , {b_value}) -> added to group")
             print(f"{a_value} and {b_value} joined group {group_id}")
+        elif groups_with_b:
+            # Vain b on ryhmässä, lisätään a
+            idx = groups_with_b[0]
+            person_groups[idx].add(a)
+            group_id = f"ID_{idx + 1}"
+            if group_id not in group_merge_log:
+                group_merge_log[group_id] = []
+            a_key = a.split('(')[0]
+            b_key = b.split('(')[0]
+            a_value = node_details.get(a_key, {}).get('value', a_key)
+            b_value = node_details.get(b_key, {}).get('value', b_key)
             
+            if node_details.get(a_key, {}).get('type') == 'URL' and '?' in a_value:
+                a_value = a_value.split('?')[0]
+            if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
+                b_value = b_value.split('?')[0]
+                
+            group_merge_log[group_id].append(f"({a_value} , {b_value}) -> added to group")
+            print(f"{a_value} and {b_value} joined group {group_id}")
         else:
+            # Kumpikaan ei ole ryhmässä, luodaan uusi
             person_groups.append({a, b})
             group_counter += 1
-            
             group_id = f"ID_{group_counter}"
             group_merge_log[group_id] = []
-            
             a_key = a.split('(')[0]
             b_key = b.split('(')[0]
-            
             a_value = node_details.get(a_key, {}).get('value', a_key)
             b_value = node_details.get(b_key, {}).get('value', b_key)
             
-            if '?' in a_value:
+            # Lyhennä URL:t jos ne on liian pitkiä
+            if node_details.get(a_key, {}).get('type') == 'URL' and '?' in a_value:
                 a_value = a_value.split('?')[0]
-            if '?' in b_value:
+            if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
                 b_value = b_value.split('?')[0]
-            
+                
             group_merge_log[group_id].append(f"({a_value} , {b_value}) = new group")
             print(f"{a_value} and {b_value} formed a group {group_id}")
-        
-        processed.add(a)
-        processed.add(b)
-    
+
     return person_groups
 
 def generate_metromap_content(all_nodes, connections):
@@ -344,7 +413,7 @@ def process_json_file():
     global current_metromap, node_details
     
     all_nodes = set()
-    connections = []
+    connections_set = set()  # Muutettu: käytetään settiä alusta alkaen
     node_timestamps = {}
     node_counts = {}
     node_entries = {}
@@ -425,8 +494,10 @@ def process_json_file():
                 all_nodes.update(all_line_ids)
                 for i in range(len(all_line_ids)):
                     for j in range(i+1, len(all_line_ids)):
-                        connections.append((all_line_ids[i], all_line_ids[j]))
+                        connections_set.add((all_line_ids[i], all_line_ids[j]))
                         print(f"Luotu tuple ({all_line_ids[i]}) , ({all_line_ids[j]})")
+        
+        connections = list(connections_set)
         
         updated_nodes = set()
         node_details = {}
