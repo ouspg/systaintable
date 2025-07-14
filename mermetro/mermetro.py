@@ -505,7 +505,7 @@ def process_json_file():
                 for i in range(len(all_line_ids)):
                     for j in range(i+1, len(all_line_ids)):
                         connections_set.add((all_line_ids[i], all_line_ids[j]))
-                        print(f"Luotu tuple ({all_line_ids[i]}) , ({all_line_ids[j]})")
+                        print(f"{line_num}/{len(lines)} Luotu tuple ({all_line_ids[i]}) , ({all_line_ids[j]})")
         
         connections = list(connections_set)
         
