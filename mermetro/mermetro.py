@@ -119,6 +119,8 @@ def parse_identities(entry):
         else:
             display_url = value
         
+        display_url = display_url.replace('@', '_AT_').replace('[', '_')
+        
         url_id = value.replace("://", "_").replace("/", "_").replace("?","_").replace("~","_").replace("&","_").replace("=","_").replace("#","_").replace("%","_")
         
         identities.append(f'URL_{url_id}([URL<br/>{display_url}])')
@@ -133,6 +135,7 @@ def parse_identities(entry):
         clean_value = value
         for old, new in replacements.items():
             clean_value = clean_value.replace(old, new)
+        value = value.replace('@', '_AT_').replace('[', '_')
 
     type_mapping = {
         'IP': f'IPv4_{clean_value}([IP-Address<br/>{value}])',
