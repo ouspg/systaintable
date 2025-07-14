@@ -53,6 +53,25 @@ def is_common(value):
     except FileNotFoundError:
         return False
 
+def add_to_common_values(value, count, threshold):
+    """Lisää arvon common_values.txt-tiedostoon jos se ylittää kynnysarvon"""
+    if count >= threshold:
+        try:
+            try:
+                with open("common_values.txt", "r", encoding="utf-8") as f:
+                    existing_entries = f.read().splitlines()
+            except FileNotFoundError:
+                existing_entries = []
+            
+            if value not in existing_entries:
+                with open("common_values.txt", "a", encoding="utf-8") as f:
+                    f.write(f"\n{value}")
+                print(f"THRESHOLD EXCEEDED: Added '{value}' to common_values.txt (count: {count})")
+                return True
+        except Exception as e:
+            print(f"Error adding to common_values.txt: {e}")
+    return False
+
 def convert_to_finnish_time(timestamp_str):
     """
     Muuntaa erilaiset timestampit Suomen aikaan
@@ -425,12 +444,15 @@ def process_json_file():
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
     global current_metromap, node_details
     
+    COMMON_VALUE_THRESHOLD = 10000
+    
     all_nodes = set()
     connections_set = set()  # Muutettu: käytetään settiä alusta alkaen
     node_timestamps = {}
     node_counts = {}
     node_entries = {}
     technical_data = {}
+    value_counts = {}
     
     try:
         with open(lokitiedosto, "r", encoding="utf-8") as f:
@@ -449,6 +471,20 @@ def process_json_file():
         if len(lines) == 0:
             print("File is empty.")
             sys.exit()
+
+        print("Counting value frequencies...")
+        for line_num, entries in lines.items():
+            for entry in entries:
+                entry_value = entry['value']
+                value_counts[entry_value] = value_counts.get(entry_value, 0) + 1
+
+        newly_added_common = []
+        for value, count in value_counts.items():
+            if add_to_common_values(value, count, COMMON_VALUE_THRESHOLD):
+                newly_added_common.append(value)
+
+        if newly_added_common:
+            print(f"Added {len(newly_added_common)} new common values. Reprocessing...")
 
         # Käsitellään rivit
         for line_num, entries in lines.items():
