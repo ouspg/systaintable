@@ -7,6 +7,7 @@ from flask import Flask, render_template, jsonify, send_from_directory
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import os
+from multiprocessing import Pool, cpu_count
 
 app = Flask(__name__)
 
@@ -43,34 +44,6 @@ def find_json():
                 print("Invalid choice, please choose a number from the list.")
         except ValueError:
             print("Invalid input, please enter a number.")
-
-def is_common(value):
-    """Tarkistaa, onko arvo common_values.txt-tiedostossa"""
-    try:
-        with open("common_values.txt", "r", encoding="utf-8") as f:
-            common_entries = f.read().splitlines()
-        return value in common_entries
-    except FileNotFoundError:
-        return False
-
-def add_to_common_values(value, count, threshold):
-    """Lisää arvon common_values.txt-tiedostoon jos se ylittää kynnysarvon"""
-    if count >= threshold:
-        try:
-            try:
-                with open("common_values.txt", "r", encoding="utf-8") as f:
-                    existing_entries = f.read().splitlines()
-            except FileNotFoundError:
-                existing_entries = []
-            
-            if value not in existing_entries:
-                with open("common_values.txt", "a", encoding="utf-8") as f:
-                    f.write(f"\n{value}")
-                print(f"THRESHOLD EXCEEDED: Added '{value}' to common_values.txt (count: {count})")
-                return True
-        except Exception as e:
-            print(f"Error adding to common_values.txt: {e}")
-    return False
 
 def convert_to_finnish_time(timestamp_str):
     """
@@ -125,53 +98,124 @@ def parse_timestamp_to_datetime(timestamp_str):
     
     except Exception:
         return None
-        
+
 def parse_identities(entry):
-    """Muuntaa lokitiedoston tunnisteet Mermaid-koodiksi"""
+    """Parsii identiteetit entry:stä"""
     identities = []
     entry_type = entry['type']
-    value = entry['value']
+    entry_value = entry['value']
     
     if entry_type == 'URL':
-        if '?' in value:
-            display_url = value.split('?')[0]
+        if '?' in entry_value:
+            display_url = entry_value.split('?')[0]
         else:
-            display_url = value
+            display_url = entry_value
         
         display_url = display_url.replace('@', '_AT_').replace('[', '_')
-        
-        url_id = value.replace("://", "_").replace("/", "_").replace("?","_").replace("~","_").replace("&","_").replace("=","_").replace("#","_").replace("%","_")
-        
+        url_id = entry_value.replace("://", "_").replace("/", "_").replace("?","_").replace("~","_").replace("&","_").replace("=","_").replace("#","_").replace("%","_")
         identities.append(f'URL_{url_id}([URL<br/>{display_url}])')
-        return identities
     else:
         replacements = {
-        " ": "_", "@": "_AT_", "%": "_", ":": "_", "[": "_", "]": "_",
-        ".": "_", "=": "_", "/": "_", "?": "_", "(": "_", ")": "_",
-        "~": "_", "&": "_", "#": "_"
+            " ": "_", "@": "_AT_", "%": "_", ":": "_", "[": "_", "]": "_",
+            ".": "_", "=": "_", "/": "_", "?": "_", "(": "_", ")": "_",
+            "~": "_", "&": "_", "#": "_"
         }
         
-        clean_value = value
+        clean_value = entry_value
         for old, new in replacements.items():
             clean_value = clean_value.replace(old, new)
-        value = value.replace('@', '_AT_').replace('[', '_')
+        display_value = entry_value.replace('@', '_AT_').replace('[', '_')
 
-    type_mapping = {
-        'IP': f'IPv4_{clean_value}([IP-Address<br/>{value}])',
-        'DNSname': f'DNS_{clean_value}([DNSname<br/>{value}])',
-        'MAC-osoite': f'MAC_{clean_value}([MAC-Address<br/>{value}])',
-        'Username': f'User_{clean_value}([User<br/>{value}])',
-        'Email': f'Email_{clean_value}([Email<br/>{value}])',
-        'Hostname': f'Hostname_{clean_value}([Hostname<br/>{value}])',
-        'TTY': f'TTY_{clean_value}([TTY<br/>{value}])',
-        'Example': f'Example_{clean_value}([Example<br/>{value}])',
-        'Example2': f'Example2_{clean_value}([Example2<br/>{value}])',
-    }
-    
-    if entry_type in type_mapping:
-        identities.append(type_mapping[entry_type])
+        type_mapping = {
+            'IP': f'IPv4_{clean_value}([IP-Address<br/>{display_value}])',
+            'DNSname': f'DNS_{clean_value}([DNSname<br/>{display_value}])',
+            'MAC-osoite': f'MAC_{clean_value}([MAC-Address<br/>{display_value}])',
+            'Username': f'User_{clean_value}([User<br/>{display_value}])',
+            'Email': f'Email_{clean_value}([Email<br/>{display_value}])',
+            'Hostname': f'Hostname_{clean_value}([Hostname<br/>{display_value}])',
+            'TTY': f'TTY_{clean_value}([TTY<br/>{display_value}])',
+            'Example': f'Example_{clean_value}([Example<br/>{display_value}])',
+            'Example2': f'Example2_{clean_value}([Example2<br/>{display_value}])',
+        }
+        
+        if entry_type in type_mapping:
+            identities.append(type_mapping[entry_type])
     
     return identities
+
+def _process_line_chunk(chunk_data):
+    """Sisäinen funktio - prosessoi yhden riviryhmän rinnakkain"""
+    chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
+    local_connections = set()
+    local_nodes = set()
+    local_node_timestamps = {}
+    local_node_counts = {}
+    local_node_entries = {}
+    local_technical_data = {}
+    
+    try:
+        with open("common_values.txt", "r", encoding="utf-8") as f:
+            common_entries = set(f.read().splitlines())
+    except FileNotFoundError:
+        common_entries = set()
+    
+    for line_num, entries in chunk_lines:
+        all_line_ids = []
+        line_technical_data = []
+        
+        for entry in entries:
+            entry_type = entry['type']
+            entry_value = entry['value']
+            
+            if entry_value in common_entries or entry_type in TECHNICAL_TYPES:
+                tech_entry = {
+                    'type': entry_type,
+                    'value': entry_value,
+                    'timestamp': entry.get('timestamp', 'N/A'),
+                    'line': line_num,
+                    'formatted_time': convert_to_finnish_time(entry.get('timestamp', 'N/A'))
+                }
+                line_technical_data.append(tech_entry)
+                
+            elif entry_type in PERSONAL_TYPES:
+                identities = parse_identities(entry)
+                all_line_ids.extend(identities)
+                
+                for node_id in identities:
+                    node_key = node_id.split('(')[0]
+                    timestamp = entry.get('timestamp', 'N/A')
+                    
+                    if node_key not in local_node_timestamps:
+                        local_node_timestamps[node_key] = []
+                        local_node_counts[node_key] = 0
+                        local_node_entries[node_key] = []
+                    
+                    local_node_timestamps[node_key].append(timestamp)
+                    local_node_counts[node_key] += 1
+                    local_node_entries[node_key].append({
+                        'timestamp': timestamp,
+                        'line': line_num,
+                        'type': entry['type'],
+                        'value': entry['value'],
+                        'formatted_time': convert_to_finnish_time(timestamp)
+                    })
+        
+        # Yhdistä tekniset tiedot
+        if all_line_ids and line_technical_data:
+            for node_id in all_line_ids:
+                node_key = node_id.split('(')[0]
+                if node_key not in local_technical_data:
+                    local_technical_data[node_key] = []
+                local_technical_data[node_key].extend(line_technical_data)
+        
+        # Tärkeä connections
+        if all_line_ids:
+            local_nodes.update(all_line_ids)
+            for i in range(len(all_line_ids)):
+                for j in range(i+1, len(all_line_ids)):
+                    local_connections.add((all_line_ids[i], all_line_ids[j]))
+    
+    return local_connections, local_nodes, local_node_timestamps, local_node_counts, local_node_entries, local_technical_data
 
 def group_by_person(connections):
     """
@@ -254,7 +298,8 @@ def group_by_person(connections):
                 detailed_log = f"MERGED: Group A [{group_a_str}]\n + \nGroup B [{group_b_str}] \nbecause of tuple ({a_value} , {b_value})"
                 group_merge_log[group_id].append(detailed_log)
                 
-                print(f"MERGED GROUPS {group_id}:")
+                print("-" * 50)
+                print(f"MERGED:")
                 print(f"  Reason: {a_value} <-> {b_value}")
                 print(f"  Group A had: {group_a_str}")
                 print(f"  Group B had: {group_b_str}")
@@ -279,7 +324,7 @@ def group_by_person(connections):
                 b_value = b_value.split('?')[0]
                 
             group_merge_log[group_id].append(f"ADDED: ({a_value} , {b_value}) -> added to group")
-            print(f"{a_value} and {b_value} joined group {group_id}")
+            print(f"JOINED: {a_value} and {b_value} joined group {group_id}")
         elif groups_with_b:
             # Vain b on ryhmässä, lisätään a
             idx = groups_with_b[0]
@@ -317,7 +362,7 @@ def group_by_person(connections):
                 b_value = b_value.split('?')[0]
                 
             group_merge_log[group_id].append(f"FORMED: ({a_value} , {b_value}) = new group")
-            print(f"{a_value} and {b_value} formed a group {group_id}")
+            print(f"FORMED: {a_value} and {b_value} formed a group {group_id}")
 
     return person_groups
 
@@ -444,10 +489,8 @@ def process_json_file():
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
     global current_metromap, node_details
     
-    COMMON_VALUE_THRESHOLD = 10000
-    
     all_nodes = set()
-    connections_set = set()  # Muutettu: käytetään settiä alusta alkaen
+    connections_set = set()
     node_timestamps = {}
     node_counts = {}
     node_entries = {}
@@ -472,80 +515,43 @@ def process_json_file():
             print("File is empty.")
             sys.exit()
 
-        print("Counting value frequencies...")
-        for line_num, entries in lines.items():
-            for entry in entries:
-                entry_value = entry['value']
-                value_counts[entry_value] = value_counts.get(entry_value, 0) + 1
-
-        newly_added_common = []
-        for value, count in value_counts.items():
-            if add_to_common_values(value, count, COMMON_VALUE_THRESHOLD):
-                newly_added_common.append(value)
-
-        if newly_added_common:
-            print(f"Added {len(newly_added_common)} new common values. Reprocessing...")
-
-        # Käsitellään rivit
-        for line_num, entries in lines.items():
-            all_line_ids = []
-            line_technical_data = []
-            
-            for entry in entries:
-                entry_type = entry['type']
-                entry_value = entry['value']
-                
-                if is_common(entry_value) or entry_type in TECHNICAL_TYPES:
-                    tech_entry = {
-                        'type': entry_type,
-                        'value': entry_value,
-                        'timestamp': entry.get('timestamp', 'N/A'),
-                        'line': line_num,
-                        'formatted_time': convert_to_finnish_time(entry.get('timestamp', 'N/A'))
-                    }
-                    line_technical_data.append(tech_entry)
-                    
-                elif entry_type in PERSONAL_TYPES:
-                    # Normaalit tiedot
-                    ids = parse_identities(entry)
-                    all_line_ids.extend(ids)
-                    
-                    for node_id in ids:
-                        node_key = node_id.split('(')[0]
-                        timestamp = entry.get('timestamp', 'N/A')
-                        
-                        # Luodaan ja lisätään tietoja sanakirjoihin
-                        if node_key not in node_timestamps:
-                            node_timestamps[node_key] = []
-                            node_counts[node_key] = 0
-                            node_entries[node_key] = []
-                        
-                        node_timestamps[node_key].append(timestamp)
-                        node_counts[node_key] += 1
-                        node_entries[node_key].append({
-                            'timestamp': timestamp,
-                            'line': line_num,
-                            'type': entry['type'],
-                            'value': entry['value'],
-                            'formatted_time': convert_to_finnish_time(timestamp)
-                        })
-
-            # Yhdistetään tekniset tiedot henkilötietoihin
-            if all_line_ids and line_technical_data:
-                for node_id in all_line_ids:
-                    node_key = node_id.split('(')[0]
-                    if node_key not in technical_data:
-                        technical_data[node_key] = []
-                    technical_data[node_key].extend(line_technical_data)
-            
-            #Tärkeä connections
-            if all_line_ids:
-                all_nodes.update(all_line_ids)
-                for i in range(len(all_line_ids)):
-                    for j in range(i+1, len(all_line_ids)):
-                        connections_set.add((all_line_ids[i], all_line_ids[j]))
-                        print(f"{line_num}/{len(lines)} Luotu tuple ({all_line_ids[i]}) , ({all_line_ids[j]})")
+        print(f"Using parallel processing with {cpu_count()} cores. This may take a while...")
         
+        line_items = list(lines.items())
+        chunk_size = max(1, len(line_items) // cpu_count())
+        
+        chunks = []
+        for i in range(0, len(line_items), chunk_size):
+            chunk = line_items[i:i + chunk_size]
+            chunks.append((chunk, PERSONAL_TYPES, TECHNICAL_TYPES))
+        
+        with Pool(processes=cpu_count()) as pool:
+            results = pool.map(_process_line_chunk, chunks)
+        
+        for chunk_connections, chunk_nodes, chunk_timestamps, chunk_counts, chunk_entries, chunk_technical in results:
+            connections_set.update(chunk_connections)
+            all_nodes.update(chunk_nodes)
+            
+            for node_key, timestamp_list in chunk_timestamps.items():
+                if node_key not in node_timestamps:
+                    node_timestamps[node_key] = []
+                node_timestamps[node_key].extend(timestamp_list)
+            
+            for node_key, count in chunk_counts.items():
+                node_counts[node_key] = node_counts.get(node_key, 0) + count
+                
+            for node_key, entry_list in chunk_entries.items():
+                if node_key not in node_entries:
+                    node_entries[node_key] = []
+                node_entries[node_key].extend(entry_list)
+                
+            for node_key, tech_list in chunk_technical.items():
+                if node_key not in technical_data:
+                    technical_data[node_key] = []
+                technical_data[node_key].extend(tech_list)
+        
+        print(f"Parallel processing completed. Found {len(connections_set)} connections.")
+
         connections = list(connections_set)
         
         updated_nodes = set()
