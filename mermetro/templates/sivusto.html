@@ -14,17 +14,17 @@
         
         let currentMetromap = '';
         
+        let modal, modalTitle, modalContent, searchResults;
+        
         window.showNodeDetails = function(nodeId) {
             window.currentId = nodeId;
             
-            let cleanId = nodeId;
-            if (cleanId.startsWith('flowchart-')) {
-                cleanId = cleanId.substring(10);
-            }
+            const cleanId = nodeId.startsWith('flowchart-') ? 
+                nodeId.substring(10) : nodeId;
             
             window.currentGroupId = cleanId;
             
-            fetch('/api/node-details/' + cleanId)
+            fetch(`/api/node-details/${cleanId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (!data.error) {
@@ -35,255 +35,190 @@
         };
         
         function showModal(nodeData) {
-            const modal = document.getElementById('nodeModal');
-            const modalTitle = document.getElementById('modalTitle');
-            const modalContent = document.getElementById('modalContent');
-            
             if (nodeData.type === 'Group') {
-                let groupNumber = '?';
-                if (window.currentGroupId) {
-                    if (window.currentGroupId.startsWith('ID_')) {
-                        groupNumber = window.currentGroupId.split('-')[0].split('_')[1];
-                    }
-                }
-                
-                modalTitle.textContent = `ID: ${groupNumber}`;
-                
-                const personalCount = nodeData.entries ? nodeData.entries.length : 0;
-                const technicalCount = nodeData.technical_entries ? nodeData.technical_entries.length : 0;
-                const totalCount = personalCount + technicalCount;
-                
-                const uniqueValues = nodeData.entries ? 
-                    [...new Set(nodeData.entries.map(entry => entry.value))] : [];
-                
-                const nodeListHtml = uniqueValues.length > 0 ? 
-                    uniqueValues.map(value => `• ${value}`).join('<br/>') : 'N/A';
-                
-                let content = `
-                    <div class="detail-section">
-                        <p><strong>Entries:</strong> ${nodeData.value}</p>
-                        <p><strong>Every group unique entry:</strong><br/>${nodeListHtml}</p>
-                        <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Technical: ${technicalCount})</p>
-                        <p><strong>Oldest:</strong> ${nodeData.first_seen}</p>
-                        <p><strong>Latest:</strong> ${nodeData.last_seen}</p>
-                    </div>
-                `;
-                
-                if (nodeData.merge_log && nodeData.merge_log.length > 0) {
-                    content += `
-                        <div class="detail-section">
-                            <h4>Group formation:</h4>
-                            <p style="font-family: monospace; font-size: 12px; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-                                ${nodeData.merge_log.join('<br/>')}
-                            </p>
-                        </div>
-                    `;
-                }
-                
+                showGroupModal(nodeData);
+            } else {
+                showNodeModal(nodeData);
+            }
+            modal.style.display = 'block';
+        }
+        
+        function showGroupModal(nodeData) {
+            const groupNumber = window.currentGroupId?.startsWith('ID_') ? 
+                window.currentGroupId.split('-')[0].split('_')[1] : '?';
+            
+            modalTitle.textContent = `ID: ${groupNumber}`;
+            
+            const personalCount = nodeData.entries?.length || 0;
+            const technicalCount = nodeData.technical_entries?.length || 0;
+            const totalCount = personalCount + technicalCount;
+            
+            const uniqueValues = nodeData.entries ? 
+                [...new Set(nodeData.entries.map(entry => entry.value))] : [];
+            
+            const nodeListHtml = uniqueValues.length > 0 ? 
+                uniqueValues.map(value => `• ${value}`).join('<br/>') : 'N/A';
+            
+            let content = `
+                <div class="detail-section">
+                    <p><strong>Entries:</strong> ${nodeData.value}</p>
+                    <p><strong>Every group unique entry:</strong><br/>${nodeListHtml}</p>
+                    <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Technical: ${technicalCount})</p>
+                    <p><strong>Oldest:</strong> ${nodeData.first_seen}</p>
+                    <p><strong>Latest:</strong> ${nodeData.last_seen}</p>
+                </div>
+            `;
+            
+            if (nodeData.merge_log?.length > 0) {
                 content += `
                     <div class="detail-section">
-                        <h4>Every unique entry:
-                            <span class="info-tooltip">
-                                ?
-                                <span class="tooltip-text">When has this exact entry appeared in the log file?</span>
-                            </span>
-                        </h4>
-                        <table class="entries-table">
-                            <thead>
-                                <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
-                            </thead>
-                            <tbody>
-                `;
-                
-                nodeData.entries.forEach((entry, index) => {
-                    content += `
-                        <tr>
-                            <td><strong>${index + 1}</strong></td>
-                            <td><strong>${entry.line}</strong></td>
-                            <td>${entry.formatted_time}</td>
-                            <td>${entry.type}</td>
-                            <td>${entry.value}</td>
-                        </tr>
-                    `;
-                });
-                
-                content += '</tbody></table></div>';
-                
-                if (nodeData.technical_entries && nodeData.technical_entries.length > 0) {
-                    content += `
-                        <div class="detail-section technical-section">
-                            <p><strong>Every technical entry:</strong>
-                                <span class="info-tooltip">
-                                    ?
-                                    <span class="tooltip-text">What has this exact entry done? / With which (non-unique/non-individual/non-identifiable) entries has it appeared?</span>
-                                </span>    
-                            </p>
-                            <table class="entries-table technical-table">
-                                <thead>
-                                    <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
-                                </thead>
-                                <tbody>
-                    `;
-                    
-                    nodeData.technical_entries.forEach((entry, index) => {
-                        content += `
-                            <tr>
-                                <td><strong>${index + 1}</strong></td>
-                                <td><strong>${entry.line}</strong></td>
-                                <td>${entry.formatted_time}</td>
-                                <td>${entry.type}</td>
-                                <td>${entry.value}</td>
-                            </tr>
-                        `;
-                    });
-                    
-                    content += '</tbody></table></div>';
-                }
-                
-                modalContent.innerHTML = content;
-            } else {
-                modalTitle.textContent = `${nodeData.type}: ${nodeData.value}`;
-                const personalCount = nodeData.entries ? nodeData.entries.length : 0;
-                const technicalCount = nodeData.technical_entries ? nodeData.technical_entries.length : 0;
-                const totalCount = personalCount + technicalCount;
-                
-                let content = `
-                    <div class="detail-section">
-                        <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Technical: ${technicalCount})</p>
-                        <p><strong>Oldest:</strong> ${nodeData.first_seen}</p>
-                        <p><strong>Latest:</strong> ${nodeData.last_seen}</p>
+                        <h4>Group formation:</h4>
+                        <p class="merge-log">${nodeData.merge_log.join('<br/>')}</p>
                     </div>
-                    
-                    <div class="detail-section">
-                        <h4>
-                            Unique entries:
-                            <span class="info-tooltip">
-                                ?
-                                <span class="tooltip-text">When has this exact entry appeared in the log file?</span>
-                            </span>
-                        </h4>
-                        <table class="entries-table">
-                            <thead>
-                                <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
-                            </thead>
-                            <tbody>
                 `;
-                
-                nodeData.entries.forEach((entry, index) => {
-                    content += `
-                        <tr>
-                            <td><strong>${index + 1}</strong></td>
-                            <td><strong>${entry.line}</strong></td>
-                            <td>${entry.formatted_time}</td>
-                            <td>${entry.type}</td>
-                            <td>${entry.value}</td>
-                        </tr>
-                    `;
-                });
-                
-                content += '</tbody></table></div>';
-                
-                if (nodeData.technical_entries && nodeData.technical_entries.length > 0) {
-                    content += `
-                        <div class="detail-section technical-section">
-                            <p>
-                                <strong>Technical entries</strong>
-                                <span class="info-tooltip">
-                                    ?
-                                    <span class="tooltip-text">What has this exact entry done? / With which (non-unique/non-individual/non-identifiable) entries has it appeared?</span>
-                                </span>
-                            </p>
-                            <table class="entries-table technical-table">
-                                <thead>
-                                    <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
-                                </thead>
-                                <tbody>
-                    `;
-                    
-                    nodeData.technical_entries.forEach((entry, index) => {
-                        content += `
-                            <tr>
-                                <td><strong>${index + 1}</strong></td>
-                                <td><strong>${entry.line}</strong></td>
-                                <td>${entry.formatted_time}</td>
-                                <td>${entry.type}</td>
-                                <td>${entry.value}</td>
-                            </tr>
-                        `;
-                    });
-                    
-                    content += '</tbody></table></div>';
-                }
-                
-                modalContent.innerHTML = content;
             }
             
-            modal.style.display = 'block';
+            content += createEntriesTable(nodeData.entries, 'Every unique entry:', 'When has this exact entry appeared in the log file?');
+            
+            if (nodeData.technical_entries?.length > 0) {
+                content += createTechnicalTable(nodeData.technical_entries);
+            }
+            
+            modalContent.innerHTML = content;
+        }
+        
+        function showNodeModal(nodeData) {
+            modalTitle.textContent = `${nodeData.type}: ${nodeData.value}`;
+            
+            const personalCount = nodeData.entries?.length || 0;
+            const technicalCount = nodeData.technical_entries?.length || 0;
+            const totalCount = personalCount + technicalCount;
+            
+            let content = `
+                <div class="detail-section">
+                    <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Technical: ${technicalCount})</p>
+                    <p><strong>Oldest:</strong> ${nodeData.first_seen}</p>
+                    <p><strong>Latest:</strong> ${nodeData.last_seen}</p>
+                </div>
+            `;
+            
+            content += createEntriesTable(nodeData.entries, 'Unique entries:', 'When has this exact entry appeared in the log file?');
+            
+            if (nodeData.technical_entries?.length > 0) {
+                content += createTechnicalTable(nodeData.technical_entries);
+            }
+            
+            modalContent.innerHTML = content;
+        }
+        
+        function createEntriesTable(entries, title, tooltipText) {
+            return `
+                <div class="detail-section">
+                    <h4>${title}
+                        <span class="info-tooltip">
+                            ?
+                            <span class="tooltip-text">${tooltipText}</span>
+                        </span>
+                    </h4>
+                    <table class="entries-table">
+                        <thead>
+                            <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
+                        </thead>
+                        <tbody>
+                            ${entries.map((entry, index) => `
+                                <tr>
+                                    <td><strong>${index + 1}</strong></td>
+                                    <td><strong>${entry.line}</strong></td>
+                                    <td>${entry.formatted_time}</td>
+                                    <td>${entry.type}</td>
+                                    <td>${entry.value}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        function createTechnicalTable(technicalEntries) {
+            return `
+                <div class="detail-section technical-section">
+                    <p><strong>Technical entries</strong>
+                        <span class="info-tooltip">
+                            ?
+                            <span class="tooltip-text">What has this exact entry done? / With which (non-unique/non-individual/non-identifiable) entries has it appeared?</span>
+                        </span>
+                    </p>
+                    <table class="entries-table technical-table">
+                        <thead>
+                            <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
+                        </thead>
+                        <tbody>
+                            ${technicalEntries.map((entry, index) => `
+                                <tr>
+                                    <td><strong>${index + 1}</strong></td>
+                                    <td><strong>${entry.line}</strong></td>
+                                    <td>${entry.formatted_time}</td>
+                                    <td>${entry.type}</td>
+                                    <td>${entry.value}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
         }
 
         function showTechnicalModal(technicalData) {
-            const modal = document.getElementById('nodeModal');
-            const modalTitle = document.getElementById('modalTitle');
-            const modalContent = document.getElementById('modalContent');
-            
             modalTitle.textContent = 'Technical & Common Entries';
             
             const nodeListHtml = technicalData.length > 0 ? 
                 technicalData.map(value => `• ${value}`).join('<br/>') : 'N/A';
             
-            let content = `
+            modalContent.innerHTML = `
                 <div class="detail-section">
                     <p><strong>Total unique values:</strong> ${technicalData.length}</p>
                     <p><strong>All technical and common values:</strong>
                         <span class="info-tooltip">
                             ?
-                            <span class="tooltip-text">These values are either marked as technical types or found in common_values.txt file.
-                                These entries will not appear as individual entries in metromap.</span>
+                            <span class="tooltip-text">These values are either marked as technical types or found in common_values.txt file. These entries will not appear as individual entries and will not join, form or merge groups in the metromap.</span>
                         </span>    
                     </p>
                     <p>${nodeListHtml}</p>
                 </div>
             `;
             
-            modalContent.innerHTML = content;
             modal.style.display = 'block';
         }
         
         function addClickEvents() {
-            const oldClickable = document.querySelectorAll('.clickable-node');
-            oldClickable.forEach(el => el.classList.remove('clickable-node'));
+            document.querySelectorAll('.clickable-node')
+                .forEach(el => el.classList.remove('clickable-node'));
             
-            const allElements = document.querySelectorAll('.mermaid svg g[id]');
-            
-            allElements.forEach((element) => {
-                if (element.id) {
+            document.querySelectorAll('.mermaid svg g[id]').forEach((element) => {
+                if (element.id && !element.dataset.clickAdded) {
                     element.classList.add('clickable-node');
-                    
-                    if (!element.dataset.clickAdded) {
-                        element.dataset.clickAdded = 'true';
-                        element.addEventListener('click', function(e) {
-                            e.stopPropagation();
-                            showNodeDetails(element.id);
-                        });
-                    }
+                    element.dataset.clickAdded = 'true';
+                    element.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        showNodeDetails(element.id);
+                    });
                 }
             });
         }
         
         async function updateMetromap() {
             try {
-                const response = await fetch('/api/metromap?t=' + Date.now());
+                const response = await fetch(`/api/metromap?t=${Date.now()}`);
                 const data = await response.json();
                 
                 if (data.metromap !== currentMetromap) {
                     currentMetromap = data.metromap;
                     const container = document.getElementById('metromap-container');
-                    container.innerHTML = '<div class="mermaid">' + currentMetromap + '</div>';
+                    container.innerHTML = `<div class="mermaid">${currentMetromap}</div>`;
                     
                     await mermaid.run({ querySelector: '.mermaid' });
-                    
                     setTimeout(addClickEvents, 100);
-                    
                     document.getElementById('timestamp').textContent = data.timestamp;
                 }
             } catch (error) {
@@ -291,12 +226,50 @@
             }
         }
         
+        function performSearch() {
+            const searchTerm = document.getElementById('searchInput').value.trim();
+            if (!searchTerm) {
+                searchResults.innerHTML = '';
+                return;
+            }
+            
+            fetch(`/api/search/${encodeURIComponent(searchTerm)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.results?.length > 0) {
+                        if (data.results.length === 1) {
+                            const result = data.results[0];
+                            showNodeDetails(result.node_id);
+                            searchResults.innerHTML = `<div class="search-result">Found: ${result.display_text}</div>`;
+                        } else {
+                            searchResults.innerHTML = `
+                                <div class="search-multiple">Found ${data.results.length} matches:</div>
+                                ${data.results.map(result => 
+                                    `<div class="search-result" onclick="showNodeDetails('${result.node_id}')">
+                                        ${result.display_text}
+                                    </div>`
+                                ).join('')}
+                            `;
+                        }
+                    } else {
+                        searchResults.innerHTML = '<div class="search-no-results">No results found</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Search error:', error);
+                    searchResults.innerHTML = '<div class="search-no-results">Search error occurred</div>';
+                });
+        }
+        
         document.addEventListener('DOMContentLoaded', function() {
+            modal = document.getElementById('nodeModal');
+            modalTitle = document.getElementById('modalTitle');
+            modalContent = document.getElementById('modalContent');
+            searchResults = document.getElementById('searchResults');
+            
             updateMetromap();
             
-            const modal = document.getElementById('nodeModal');
             const closeBtn = document.getElementsByClassName('close')[0];
-            
             if (closeBtn) {
                 closeBtn.onclick = () => modal.style.display = 'none';
             }
@@ -309,42 +282,6 @@
             
             const searchInput = document.getElementById('searchInput');
             const searchButton = document.getElementById('searchButton');
-            const searchResults = document.getElementById('searchResults');
-            
-            function performSearch() {
-                const searchTerm = searchInput.value.trim();
-                if (!searchTerm) {
-                    searchResults.innerHTML = '';
-                    return;
-                }
-                
-                fetch('/api/search/' + encodeURIComponent(searchTerm))
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.results && data.results.length > 0) {
-                            if (data.results.length === 1) {
-                                const result = data.results[0];
-                                showNodeDetails(result.node_id);
-                                searchResults.innerHTML = `<div class="search-result">Found: ${result.display_text}</div>`;
-                            } else {
-                                searchResults.innerHTML = `
-                                    <div class="search-multiple">Found ${data.results.length} matches:</div>
-                                    ${data.results.map(result => 
-                                        `<div class="search-result" onclick="showNodeDetails('${result.node_id}')">
-                                            ${result.display_text}
-                                        </div>`
-                                    ).join('')}
-                                `;
-                            }
-                        } else {
-                            searchResults.innerHTML = '<div class="search-no-results">No results found</div>';
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Search error:', error);
-                        searchResults.innerHTML = '<div class="search-no-results">Search error occurred</div>';
-                    });
-            }
             
             searchButton.addEventListener('click', performSearch);
             searchInput.addEventListener('keypress', function(e) {
@@ -359,8 +296,7 @@
                 }
             });
 
-            const technicalButton = document.getElementById('technicalButton');
-            technicalButton.addEventListener('click', function() {
+            document.getElementById('technicalButton').addEventListener('click', function() {
                 fetch('/api/technical-entries')
                     .then(response => response.json())
                     .then(data => {
@@ -390,9 +326,10 @@
             position: relative;
         }
         
-        #searchInput {
+        .search-container input[type="text"] {
             flex: 1;
             min-width: 250px;
+            max-width: 400px;
             padding: 8px 12px;
             border: 2px solid #ddd;
             border-radius: 5px;
@@ -400,14 +337,13 @@
             font-family: inherit;
         }
         
-        #searchInput:focus {
+        .search-container input[type="text"]:focus {
             outline: none;
             border-color: #2196F3;
         }
         
-        #searchButton {
+        .search-container button {
             padding: 8px 16px;
-            background-color: #2196F3;
             color: white;
             border: none;
             border-radius: 5px;
@@ -415,6 +351,14 @@
             cursor: pointer;
             font-family: inherit;
             font-weight: bold;
+        }
+        
+        .search-container button:hover {
+            opacity: 0.9;
+        }
+        
+        #searchButton {
+            background-color: #2196F3;
         }
         
         #searchButton:hover {
@@ -422,15 +366,7 @@
         }
 
         #technicalButton {
-            padding: 8px 16px;
             background-color: #FF9800;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 14px;
-            cursor: pointer;
-            font-family: inherit;
-            font-weight: bold;
             margin-left: auto;
         }
         
@@ -446,6 +382,8 @@
             top: 100%;
             left: 0;
             z-index: 1000;
+            max-height: 300px;
+            overflow-y: auto;
         }
         
         .search-result {
@@ -477,12 +415,22 @@
         .mermaid svg g.clickable-node * { cursor: pointer !important; }
         
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
-        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: none; border-radius: 10px; width: 80%; max-width: 800px; max-height: 80vh; overflow-y: auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: none; border-radius: 10px; width: 80%; max-width: 800px; max-height: 80vh; overflow-y: auto; font-family: inherit; }
         .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
         .close:hover, .close:focus { color: black; }
+        
         .detail-section { margin-bottom: 20px; }
         .detail-section h4 { color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 5px; margin-top: 0; }
         .detail-section p { color: #333; font-weight: normal; word-wrap: break-word; overflow-wrap: break-word; }
+        
+        .merge-log {
+            font-family: monospace; 
+            font-size: 12px; 
+            background: #f5f5f5; 
+            padding: 8px; 
+            border-radius: 4px;
+        }
+        
         .entries-table { 
             width: 100%; 
             border-collapse: collapse; 
@@ -490,6 +438,7 @@
             font-family: inherit; 
             table-layout: fixed;
         }
+        
         .entries-table th, .entries-table td { 
             border: 1px solid #ddd; 
             padding: 8px; 
@@ -499,98 +448,74 @@
             overflow-wrap: break-word;
             vertical-align: top;
         }
+        
         .entries-table th { 
             background-color: #2196F3; 
             color: white; 
             font-weight: bold; 
         }
+        
         .entries-table tr:nth-child(even) { background-color: #f2f2f2; }
         .entries-table tr:hover { background-color: #e3f2fd; }
+        
         .entries-table th:first-child { 
             width: 60px; 
             text-align: center; 
             background-color: #1976D2; 
         }
-        .entries-table th:nth-child(2) { 
-            width: 90px; 
-        }
-        .entries-table th:nth-child(3) { 
-            width: 140px; 
-        }
-        .entries-table th:nth-child(4) { 
-            width: 120px; 
-        }
+        
+        .entries-table th:nth-child(2) { width: 90px; }
+        .entries-table th:nth-child(3) { width: 140px; }
+        .entries-table th:nth-child(4) { width: 120px; }
         .entries-table th:nth-child(5) { 
             width: calc(100% - 410px);
             min-width: 200px;
         }
-        .entries-table td:first-child { 
-            text-align: center; 
-            font-weight: bold; 
-            color: #1976D2; 
-        }
+        
+        .entries-table td:first-child, 
         .entries-table td:nth-child(2) { 
             text-align: center; 
             font-weight: bold; 
             color: #1976D2; 
         }
+        
         .entries-table td:nth-child(5) {
             word-break: break-all;
             hyphens: auto;
             max-width: 200px;
         }
         
-        .technical-section { margin-top: 20px; padding-top: 15px; }
+        .technical-section { 
+            margin-top: 20px; 
+            padding-top: 15px; 
+        }
+        
         .technical-section p { 
             border-bottom: 2px solid #FF9800; 
             padding-bottom: 10px; 
             margin-bottom: 15px;
             word-wrap: break-word;
         }
+        
         .technical-table th { 
             background-color: #FF9800; 
             color: white; 
         }
+        
         .technical-table th:first-child { 
             background-color: #F57C00; 
         }
-        .technical-table th, .technical-table td {
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            vertical-align: top;
-        }
-        .technical-table th:first-child { 
-            width: 60px; 
-        }
-        .technical-table th:nth-child(2) { 
-            width: 90px; 
-        }
-        .technical-table th:nth-child(3) { 
-            width: 140px; 
-        }
-        .technical-table th:nth-child(4) { 
-            width: 120px; 
-        }
-        .technical-table th:nth-child(5) { 
-            width: calc(100% - 410px);
-            min-width: 200px;
-        }
+        
+        .technical-table td:first-child, 
         .technical-table td:nth-child(2) { 
             text-align: center; 
             font-weight: bold; 
             color: #F57C00; 
         }
-        .technical-table td:first-child { 
-            color: #F57C00; 
-            text-align: center;
-            font-weight: bold;
+        
+        .technical-table tr:hover { 
+            background-color: #fff3e0; 
         }
-        .technical-table td:nth-child(5) {
-            word-break: break-all;
-            hyphens: auto;
-            max-width: 200px;
-        }
-        .technical-table tr:hover { background-color: #fff3e0; }
         
         .info-tooltip {
             position: relative;
@@ -659,60 +584,6 @@
             border-bottom: 2px solid #2196F3;
             padding-bottom: 5px;
             margin-bottom: 15px;
-        }
-
-        .search-container input[type="text"] {
-            width: auto;
-            max-width: 400px;
-            padding: 8px 12px;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
-            font-family: inherit;
-            margin-bottom: 0;
-        }
-        
-        .search-container button {
-            padding: 8px 16px;
-            background-color: #2196F3;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 14px;
-            cursor: pointer;
-            font-family: inherit;
-            font-weight: bold;
-        }
-        
-        .search-container button:hover {
-            background-color: #1976D2;
-        }
-        
-        .search-results {
-            width: 100%;
-            max-width: 400px;
-            background-color: white;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            margin-top: 5px;
-            z-index: 1000;
-            position: absolute;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        
-        .search-results div {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-            cursor: pointer;
-        }
-        
-        .search-results div:hover {
-            background-color: #f5f5f5;
-        }
-        
-        .search-results div:last-child {
-            border-bottom: none;
         }
     </style>
 </head>
