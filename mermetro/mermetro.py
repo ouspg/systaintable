@@ -100,7 +100,7 @@ def parse_timestamp_to_datetime(timestamp_str):
         return None
 
 def parse_identities(entry):
-    """Parsii identiteetit entry:stä"""
+    """Muuttaa entryt mermaid-koodiksi"""
     identities = []
     entry_type = entry['type']
     entry_value = entry['value']
@@ -515,7 +515,7 @@ def process_json_file():
             print("File is empty.")
             sys.exit()
 
-        print(f"Using parallel processing with {cpu_count()} cores. This may take a while...")
+        print(f"Using multiprocessing with {cpu_count()} cores. This may take a while...")
         
         line_items = list(lines.items())
         chunk_size = max(1, len(line_items) // cpu_count())
@@ -841,6 +841,36 @@ def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
+@app.route('/api/technical-entries')
+def api_technical_entries():
+    """API teknisten ja yleisten entryjen hakuun"""
+    technical_values = set()
+    
+    try:
+        with open("common_values.txt", "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    technical_values.add(line)
+    except FileNotFoundError:
+        pass
+    
+    for node_id, details in node_details.items():
+        if details.get('type') != 'Group':
+            if 'technical_entries' in details:
+                for entry in details['technical_entries']:
+                    technical_values.add(entry.get('value', 'Unknown'))
+            
+            if 'entries' in details:
+                for entry in details['entries']:
+                    entry_value = entry.get('value', '')
+                    entry_type = entry.get('type', '')
+                    
+                    if entry_type in TECHNICAL_TYPES:
+                        technical_values.add(entry_value)
+    
+    return jsonify(sorted(list(technical_values)))
+
 def create_html_file(metromap_content):
     """Luo staattinen HTML-tiedosto"""
     html_content = f"""<!DOCTYPE html>
@@ -849,7 +879,7 @@ def create_html_file(metromap_content):
     <title>Mermetro</title>
     <script type="module">
         import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({{ startOnLoad: true }});
+        mermaid.initialize({{ startOnLoad: true, maxTextSize: 10000000000, maxEdges: 500000 }});
     </script>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}

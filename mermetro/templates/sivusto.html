@@ -82,7 +82,12 @@
                 
                 content += `
                     <div class="detail-section">
-                        <h4>Every unique entry:</h4>
+                        <h4>Every unique entry:
+                            <span class="info-tooltip">
+                                ?
+                                <span class="tooltip-text">When has this exact entry appeared in the log file?</span>
+                            </span>
+                        </h4>
                         <table class="entries-table">
                             <thead>
                                 <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
@@ -107,7 +112,12 @@
                 if (nodeData.technical_entries && nodeData.technical_entries.length > 0) {
                     content += `
                         <div class="detail-section technical-section">
-                            <p><strong>Every technical entry:</strong></p>
+                            <p><strong>Every technical entry:</strong>
+                                <span class="info-tooltip">
+                                    ?
+                                    <span class="tooltip-text">What has this exact entry done? / With which (non-unique/non-individual/non-identifiable) entries has it appeared?</span>
+                                </span>    
+                            </p>
                             <table class="entries-table technical-table">
                                 <thead>
                                     <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
@@ -208,6 +218,34 @@
                 modalContent.innerHTML = content;
             }
             
+            modal.style.display = 'block';
+        }
+
+        function showTechnicalModal(technicalData) {
+            const modal = document.getElementById('nodeModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalContent = document.getElementById('modalContent');
+            
+            modalTitle.textContent = 'Technical & Common Entries';
+            
+            const nodeListHtml = technicalData.length > 0 ? 
+                technicalData.map(value => `• ${value}`).join('<br/>') : 'N/A';
+            
+            let content = `
+                <div class="detail-section">
+                    <p><strong>Total unique values:</strong> ${technicalData.length}</p>
+                    <p><strong>All technical and common values:</strong>
+                        <span class="info-tooltip">
+                            ?
+                            <span class="tooltip-text">These values are either marked as technical types or found in common_values.txt file.
+                                These entries will not appear as individual entries in metromap.</span>
+                        </span>    
+                    </p>
+                    <p>${nodeListHtml}</p>
+                </div>
+            `;
+            
+            modalContent.innerHTML = content;
             modal.style.display = 'block';
         }
         
@@ -320,6 +358,18 @@
                     searchResults.innerHTML = '';
                 }
             });
+
+            const technicalButton = document.getElementById('technicalButton');
+            technicalButton.addEventListener('click', function() {
+                fetch('/api/technical-entries')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.error) {
+                            showTechnicalModal(data);
+                        }
+                    })
+                    .catch(error => console.error('Error:', error));
+            });
         });
         
         setInterval(updateMetromap, 10000);
@@ -369,6 +419,23 @@
         
         #searchButton:hover {
             background-color: #1976D2;
+        }
+
+        #technicalButton {
+            padding: 8px 16px;
+            background-color: #FF9800;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            margin-left: auto;
+        }
+        
+        #technicalButton:hover {
+            background-color: #F57C00;
         }
         
         #searchResults {
@@ -664,6 +731,7 @@
                     For timestamp search, add "" e.g. "16.12"
                 For combined search, use 8.8.8.8 "16.12"</span>
             </span>
+            <button id="technicalButton">Technical Entries</button>
             <div id="searchResults"></div>
         </div>
     </div>
