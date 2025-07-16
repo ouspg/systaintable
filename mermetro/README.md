@@ -24,6 +24,6 @@ mermetro/
 
  Place the `.json` file exported from the Classifier into the `mermetro` directory (where `mermetro.py` is located)
 
-Follow the prints and wait, it can take several minutes to complete with larger files
+Run `mermetro.py`, follow the prints and wait, it can take several minutes to complete with larger files
 
 Open http://localhost:5000
