@@ -794,8 +794,7 @@ def api_search(search_term):
                     elif is_combined_search:
                         display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {entry_value} at {entry_time})"
                     else:
-                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (part of group)"
-                    
+                        display_text = f"{node_id} (part of group)"
                     results.append({
                         'node_id': node_id,
                         'display_text': display_text,
