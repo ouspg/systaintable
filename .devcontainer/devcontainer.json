@@ -1,0 +1,7 @@
+{
+    "name": "Systaintable devcontainer",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+   "postCreateCommand": "./build-tools.sh"
+}

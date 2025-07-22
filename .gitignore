@@ -1,0 +1,4 @@
+# Rust compilation artifacts
+*/Cargo.lock
+classifier/regex-classifier/
+classifier/target/
