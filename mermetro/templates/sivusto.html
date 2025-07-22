@@ -63,9 +63,9 @@
                 <div class="detail-section">
                     <p><strong>Entries:</strong> ${nodeData.value}</p>
                     <p><strong>Every group unique entry:</strong><br/>${nodeListHtml}</p>
-                    <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Technical: ${technicalCount})</p>
-                    <p><strong>Oldest:</strong> ${nodeData.first_seen}</p>
-                    <p><strong>Latest:</strong> ${nodeData.last_seen}</p>
+                    <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Filtered: ${technicalCount})</p>
+                    <p><strong>First:</strong> ${nodeData.first_seen}</p>
+                    <p><strong>Last:</strong> ${nodeData.last_seen}</p>
                 </div>
             `;
             
@@ -96,9 +96,9 @@
             
             let content = `
                 <div class="detail-section">
-                    <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Technical: ${technicalCount})</p>
-                    <p><strong>Oldest:</strong> ${nodeData.first_seen}</p>
-                    <p><strong>Latest:</strong> ${nodeData.last_seen}</p>
+                    <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Filtered: ${technicalCount})</p>
+                    <p><strong>First:</strong> ${nodeData.first_seen}</p>
+                    <p><strong>Last:</strong> ${nodeData.last_seen}</p>
                 </div>
             `;
             
@@ -143,10 +143,10 @@
         function createTechnicalTable(technicalEntries) {
             return `
                 <div class="detail-section technical-section">
-                    <p><strong>Technical entries</strong>
+                    <p><strong>Filtered entries</strong>
                         <span class="info-tooltip">
                             ?
-                            <span class="tooltip-text">What has this exact entry done? / With which (non-unique/non-individual/non-identifiable) entries has it appeared?</span>
+                            <span class="tooltip-text">These entries have been filtered to keep metromap readable</span>
                         </span>
                     </p>
                     <table class="entries-table technical-table">
@@ -170,7 +170,7 @@
         }
 
         function showTechnicalModal(technicalData) {
-            modalTitle.textContent = 'Technical & Common Entries';
+            modalTitle.textContent = 'Filtered Entries';
             
             const nodeListHtml = technicalData.length > 0 ? 
                 technicalData.map(value => `• ${value}`).join('<br/>') : 'N/A';
@@ -178,10 +178,10 @@
             modalContent.innerHTML = `
                 <div class="detail-section">
                     <p><strong>Total unique values:</strong> ${technicalData.length}</p>
-                    <p><strong>All technical and common values:</strong>
+                    <p><strong>Filtered Entries:</strong>
                         <span class="info-tooltip">
                             ?
-                            <span class="tooltip-text">These values are either marked as technical types or found in common_values.txt file. These entries will not appear as individual entries and will not join, form or merge groups in the metromap.</span>
+                            <span class="tooltip-text">These values are either marked as filtered types or found in common_values.txt file. These entries will not appear as individual entries and will not join, form or merge groups in the metromap.</span>
                         </span>    
                     </p>
                     <p>${nodeListHtml}</p>
@@ -602,7 +602,7 @@
                     For timestamp search, add "" e.g. "16.12"
                 For combined search, use 8.8.8.8 "16.12"</span>
             </span>
-            <button id="technicalButton">Technical Entries</button>
+            <button id="technicalButton">Filtered Entries</button>
             <div id="searchResults"></div>
         </div>
     </div>
