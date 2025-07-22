@@ -45,36 +45,6 @@ def find_json():
         except ValueError:
             print("Invalid input, please enter a number.")
 
-def convert_to_finnish_time(timestamp_str):
-    """
-    Muuntaa erilaiset timestampit Suomen aikaan
-    Palauttaa merkkijonon muotoa "16.12 at 23:38:50"
-    """
-    if timestamp_str == 'N/A':
-        return 'N/A'
-    
-    try:
-        # 2024-12-16 23:38:50
-        if len(timestamp_str) == 19 and '-' in timestamp_str and ':' in timestamp_str:
-            dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
-            return dt.strftime('%d.%m at %H:%M:%S')
-        
-        # Dec 16 23:38:50
-        if len(timestamp_str.split()) == 3:
-            current_year = datetime.now().year
-            timestamp_with_year = f"{current_year} {timestamp_str}"
-            dt = datetime.strptime(timestamp_with_year, '%Y %b %d %H:%M:%S')
-            return dt.strftime('%d.%m at %H:%M:%S')
-        
-        # ISO formaatti UTC
-        utc_dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        finnish_tz = timezone('Europe/Helsinki')
-        finnish_dt = utc_dt.astimezone(finnish_tz)
-        return finnish_dt.strftime('%d.%m.%Y at %H:%M:%S')
-        
-    except Exception:
-        return timestamp_str
-    
 def parse_timestamp_to_datetime(timestamp_str):
     """
     Muuntaa timestamp-merkkijonon datetime-objektiksi
@@ -173,7 +143,6 @@ def _process_line_chunk(chunk_data):
                     'value': entry_value,
                     'timestamp': entry.get('timestamp', 'N/A'),
                     'line': line_num,
-                    'formatted_time': convert_to_finnish_time(entry.get('timestamp', 'N/A'))
                 }
                 line_technical_data.append(tech_entry)
                 
@@ -197,7 +166,6 @@ def _process_line_chunk(chunk_data):
                         'line': line_num,
                         'type': entry['type'],
                         'value': entry['value'],
-                        'formatted_time': convert_to_finnish_time(timestamp)
                     })
         
         # Yhdistä tekniset tiedot
@@ -580,7 +548,7 @@ def process_json_file():
             count = node_counts.get(node_key, 0)
             entries = node_entries.get(node_key, [])
             tech_entries = technical_data.get(node_key, [])
-            
+
             valid_timestamps = []
             for ts in timestamps:
                 dt = parse_timestamp_to_datetime(ts)
@@ -589,8 +557,8 @@ def process_json_file():
             
             if valid_timestamps:
                 valid_timestamps.sort()
-                first_time = valid_timestamps[0].strftime('%d.%m at %H:%M:%S')
-                last_time = valid_timestamps[-1].strftime('%d.%m at %H:%M:%S')
+                first_time = timestamps[0] if timestamps else 'N/A'
+                last_time = timestamps[-1] if timestamps else 'N/A'
                 
                 node_details[node_key] = {
                     'type': entries[0]['type'] if entries else 'Unknown',
@@ -598,14 +566,14 @@ def process_json_file():
                     'count': count,
                     'first_seen': first_time,
                     'last_seen': last_time,
-                    'entries': sorted(entries, key=lambda x: x['formatted_time']),
-                    'technical_entries': sorted(tech_entries, key=lambda x: x['formatted_time'])
+                    'entries': sorted(entries, key=lambda x: x['timestamp']),
+                    'technical_entries': sorted(tech_entries, key=lambda x: x['timestamp'])
                 }   
                 
                 if first_time == last_time:
                     info = f"<br/>Time: {first_time}<br/>Count: {count}"
                 else:
-                    info = f"<br/>Oldest: {first_time}<br/>Latest: {last_time}<br/>Count: {count}"
+                    info = f"<br/>First: {first_time}<br/>Last: {last_time}<br/>Count: {count}"
             else:
                 node_details[node_key] = {
                     'type': entries[0]['type'] if entries else 'Unknown',
@@ -666,8 +634,8 @@ def process_json_file():
             
             if all_timestamps:
                 all_timestamps.sort()
-                first_time = all_timestamps[0].strftime('%d.%m at %H:%M:%S')
-                last_time = all_timestamps[-1].strftime('%d.%m at %H:%M:%S')
+                first_time = all_entries[0]['timestamp'] if all_entries else 'N/A'
+                last_time = all_entries[-1]['timestamp'] if all_entries else 'N/A'
             else:
                 first_time = 'N/A'
                 last_time = 'N/A'
