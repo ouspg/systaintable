@@ -37,15 +37,10 @@ Open http://localhost:5000
 ```source venv/bin/activate```
 
 3. Install pytz (and any other dependencies)
-```
-pip install pytz flask watchdog
-```
-
+```pip install pytz flask watchdog```
 
 4. Run mermetro
 ```python mermetro.py```
 
 5. To deactivate the virtual environment when done:
-```
-deactivate
-```
+```deactivate```
