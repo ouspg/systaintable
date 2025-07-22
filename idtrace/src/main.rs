@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::{self, BufReader, Read, BufRead};
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
 
 use clap::Parser;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use indicatif::{ProgressBar, ProgressStyle};
+use num_cpus;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Entry {
@@ -70,6 +71,13 @@ impl DisjointSet {
     }
 }
 
+struct MergeLog {
+    group_id: String,
+    reason: String,
+    group_a_values: Vec<String>,
+    group_b_values: Vec<String>,
+}
+
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 struct Args {
@@ -108,7 +116,83 @@ struct Args {
     /// Number of threads to use (0 = auto)
     #[clap(short = 'j', long = "threads", default_value = "0")]
     threads: usize,
+    
+    /// Output file path for selected identity JSON
+    #[clap(short = 'o', long = "output")]
+    output: Option<PathBuf>,
 
+    #[clap(long)]
+    verbose_merges: bool,
+}
+fn process_batch_and_update_disjoint(
+    batch: &mut HashMap<String, Vec<u32>>,
+    _person_groups: &mut Vec<HashSet<u32>>,  // Unused but kept for compatibility 
+    max_occurrences: usize,
+    transitive_merges: &mut usize,
+    merge_logs: &mut Vec<String>,
+    verbose: bool,
+    line_to_index: &HashMap<u32, usize>,
+    disjoint_set: &mut DisjointSet
+) {
+    // Hard limit on lines per value to prevent memory issues
+    const ABSOLUTE_MAX_LINES: usize = 2000;
+    let effective_max = max_occurrences.min(ABSOLUTE_MAX_LINES);
+    
+    // Process each value directly and update disjoint set only (skip person_groups)
+    for (value, lines) in batch.iter() {
+        // Skip overly common values completely
+        if lines.len() > effective_max {
+            continue;
+        }
+        
+        // Process all pairs sharing this value directly by updating the disjoint set
+        if lines.len() >= 2 {
+            // For very common values, just connect sequential pairs
+            if lines.len() > 1000 {
+                let mut prev_idx = None;
+                
+                for &line in lines {
+                    if let Some(&line_idx) = line_to_index.get(&line) {
+                        if let Some(prev) = prev_idx {
+                            if disjoint_set.union(prev, line_idx) {
+                                *transitive_merges += 1;
+                            }
+                        }
+                        prev_idx = Some(line_idx);
+                    }
+                }
+                
+                // Log if verbose
+                if verbose && merge_logs.len() < 100 {
+                    merge_logs.push(format!(
+                        "MERGED: Connected {} lines sequentially for common value {}", 
+                        lines.len(), value
+                    ));
+                }
+            } else {
+                // For smaller values, we can afford to process all pairs
+                for i in 0..lines.len() {
+                    if let Some(&idx_i) = line_to_index.get(&lines[i]) {
+                        for j in i+1..lines.len() {
+                            if let Some(&idx_j) = line_to_index.get(&lines[j]) {
+                                if disjoint_set.union(idx_i, idx_j) {
+                                    *transitive_merges += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Log if verbose
+                if verbose && merge_logs.len() < 100 {
+                    merge_logs.push(format!(
+                        "MERGED: Connected all {} lines sharing value {}", 
+                        lines.len(), value
+                    ));
+                }
+            }
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -156,57 +240,113 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.line {
         let process_start = Instant::now();
         
-        // Create a mapping from line numbers to sequential indices for the DisjointSet
-        let mut all_lines: Vec<u32> = entries.iter().map(|e| e.line).collect();
+        println!("Building line number mappings...");
+        
+        // More efficient way to build mappings - use a more direct approach
+        let mut all_lines: Vec<u32> = entries.iter()
+            .map(|e| e.line)
+            .collect();
+            
+        println!("Collected all line numbers in {:.2}s", process_start.elapsed().as_secs_f64());
+        
+        // Sort and dedup in place is much faster than using a HashSet
         all_lines.sort_unstable();
         all_lines.dedup();
         
-        let line_to_index: HashMap<u32, usize> = all_lines.iter()
-            .enumerate()
-            .map(|(idx, &line)| (line, idx))
-            .collect();
+        let line_count = all_lines.len();
+        println!("Found {} unique line numbers in {:.2}s", line_count, process_start.elapsed().as_secs_f64());
         
-        let index_to_line: Vec<u32> = all_lines;
-        
-        if debug {
-            println!("Found {} unique line numbers", line_to_index.len());
+        // More efficient construction of line_to_index
+        let mut line_to_index = HashMap::with_capacity(line_count);
+        for (idx, &line) in all_lines.iter().enumerate() {
+            line_to_index.insert(line, idx);
         }
         
-        // Step 1: Initial grouping by line number using more efficient HashMap
-        let mut line_groups: HashMap<u32, Vec<usize>> = HashMap::with_capacity(line_to_index.len());
-        for (i, entry) in entries.iter().enumerate() {
-            line_groups.entry(entry.line).or_default().push(i);
-        }
+        // Use the existing all_lines vector directly as index_to_line
+        let index_to_line = all_lines;
         
-        // Step 2: Build a map of values to line numbers and analyze their frequency
-        println!("Analyzing value frequency across lines...");
+        println!("Built line mappings in {:.2}s", process_start.elapsed().as_secs_f64());
         
-        // Parse types filter if provided
-        let merge_types: Option<HashSet<String>> = args.merge_types.map(|types_str| {
+        // Parse types filter if provided - use as_ref() to avoid moving the value
+        let merge_types: Option<HashSet<String>> = args.merge_types.as_ref().map(|types_str| {
             types_str.split(',').map(|s| s.trim().to_string()).collect()
         });
         
-        // Store value frequency statistics
-        let mut value_to_lines: HashMap<String, Vec<usize>> = HashMap::new();
-        let mut value_frequency: HashMap<String, usize> = HashMap::new();
+        // More efficient value-to-lines mapping - process in smaller chunks
+        println!("Building value-to-line mappings (this may take a while for large datasets)...");
         
-        for entry in &entries {
-            // Skip if entry type isn't in the merge_types list (if provided)
-            if let Some(ref types) = merge_types {
-                if !types.contains(&entry.entry_type) {
-                    continue;
+        // Use smaller chunk size for better memory management
+        let optimal_chunk_size = std::cmp::min(100000, entries.len() / (num_cpus::get() * 4));
+        
+        // Pre-allocate capacity for better performance - with proper type annotations
+        let value_to_lines_mutex = Arc::new(Mutex::new(HashMap::<String, Vec<usize>>::with_capacity(100000)));
+        let value_frequency_mutex = Arc::new(Mutex::new(HashMap::<String, usize>::with_capacity(100000)));
+        
+        // Process entries in parallel with progress bar
+        let pb = ProgressBar::new(entries.len() as u64);
+        pb.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} entries ({eta})")
+            .expect("Failed to parse template")
+            .progress_chars("#>-"));
+        
+        // Process in smaller chunks with less frequent locking
+        entries.par_chunks(optimal_chunk_size)
+            .for_each(|chunk| {
+                // Use more memory-efficient local maps with explicit type annotations
+                let mut local_value_to_lines: HashMap<String, Vec<usize>> = HashMap::new();
+                let mut local_value_frequency: HashMap<String, usize> = HashMap::new();
+                
+                for entry in chunk {
+                    // Make a clone of merge_types reference for the closure
+                    let merge_types_ref = &merge_types;
+                    
+                    // Skip if entry type isn't in the merge_types list (if provided)
+                    if let Some(ref types) = merge_types_ref {
+                        if !types.contains(&entry.entry_type) {
+                            continue;
+                        }
+                    }
+                    
+                    let key = format!("{}:{}", entry.entry_type, entry.value);
+                    
+                    // Handle invalid line numbers gracefully
+                    if let Some(&index) = line_to_index.get(&entry.line) {
+                        local_value_to_lines.entry(key.clone()).or_default().push(index);
+                        *local_value_frequency.entry(key).or_insert(0) += 1;
+                    }
                 }
-            }
-            
-            let key = format!("{}:{}", entry.entry_type, entry.value);
-            let index = line_to_index[&entry.line];
-            
-            // Add to value_to_lines mapping
-            value_to_lines.entry(key.clone()).or_default().push(index);
-            
-            // Increment frequency counter
-            *value_frequency.entry(key).or_insert(0) += 1;
-        }
+                
+                // Lock only once after processing the entire chunk
+                let mut global_value_to_lines = value_to_lines_mutex.lock().unwrap();
+                let mut global_value_frequency = value_frequency_mutex.lock().unwrap();
+                
+                for (key, mut indices) in local_value_to_lines {
+                    global_value_to_lines.entry(key).or_default().append(&mut indices);
+                }
+                
+                for (key, count) in local_value_frequency {
+                    *global_value_frequency.entry(key).or_insert(0) += count;
+                }
+                
+                // Update progress
+                pb.inc(chunk.len() as u64);
+            });
+        
+        pb.finish_with_message("Value mapping complete");
+    
+        // Extract results from the mutexes
+        let mut value_to_lines = Arc::try_unwrap(value_to_lines_mutex)
+            .expect("Failed to unwrap value_to_lines_mutex")
+            .into_inner()
+            .unwrap();
+        
+        let value_frequency = Arc::try_unwrap(value_frequency_mutex)
+            .expect("Failed to unwrap value_frequency_mutex")
+            .into_inner()
+            .unwrap();
+                    
+        // Continue with value processing - REMOVE THE DUPLICATE CODE BELOW
+        println!("Grouping entries by line number...");
         
         // Calculate max occurrences based on max frequency percentage
         let max_occurrences = (args.max_frequency / 100.0 * line_to_index.len() as f64) as usize;
@@ -214,28 +354,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_occurrences, args.max_frequency);
         
         // Show most common values
-        let mut value_freq_vec: Vec<(String, usize)> = value_frequency.iter()
-            .map(|(k, &v)| (k.clone(), v))
-            .collect();
-        
-        value_freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
-        
+        // Find top 10 most common values without collecting the entire sorted vector
+        let mut top_values = Vec::with_capacity(10);
+        for (k, &v) in &value_frequency {
+            if top_values.len() < 10 {
+                top_values.push((k.clone(), v));
+                // Keep it sorted
+                top_values.sort_by(|a, b| b.1.cmp(&a.1));
+            } else if v > top_values.last().unwrap().1 {
+                // Replace the smallest entry if this one is larger
+                top_values.pop();
+                top_values.push((k.clone(), v));
+                top_values.sort_by(|a, b| b.1.cmp(&a.1));
+            }
+        }
+
         println!("\nTop 10 most common values:");
-        for (i, (value, count)) in value_freq_vec.iter().take(10).enumerate() {
+        for (i, (value, count)) in top_values.iter().enumerate() {
             println!("{}. {} - appears in {} lines ({:.2}%)", 
                 i+1, value, count, (*count as f64 / line_to_index.len() as f64) * 100.0);
         }
-        
+
         if args.analyze {
             println!("\nAnalysis complete. Use --types and --max-freq to control identity merging.");
             return Ok(());
         }
-        
+
         // Filter out overly common values
-        value_to_lines.retain(|key, lines| {
+        value_to_lines.retain(|_key, lines| {
             // Keep values that appear in at least 2 lines but fewer than max_occurrences
             lines.len() >= 2 && lines.len() <= max_occurrences
         });
+        
+        drop(value_frequency);
         
         println!("\nUsing {} values for identity merging", value_to_lines.len());
         
@@ -249,245 +400,217 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("Failed to parse template")
             .progress_chars("#>-"));
         
+        // Create DisjointSet for tracking identity groups
         let mut disjoint_set = DisjointSet::new(line_to_index.len());
-        let mut merge_count = 0;
         
         // First pass: Build a mapping of line indices to the values they contain
-        let mut line_to_values: HashMap<usize, HashSet<String>> = HashMap::new();
-        for (value, line_indices) in &value_to_lines {
-            for &line_idx in line_indices {
-                line_to_values.entry(line_idx).or_default().insert(value.clone());
-            }
-        }
+        let line_to_values_mutex = Arc::new(Mutex::new(HashMap::<usize, HashSet<String>>::new()));
         
-        // Second pass: For each value, merge all lines that contain it
-        for (value, line_indices) in value_to_lines.iter() {
-            if line_indices.len() >= 2 {
-                // Merge all pairs of lines that share this value
-                for &line_a in line_indices {
-                    for &line_b in line_indices {
-                        if line_a != line_b && disjoint_set.union(line_a, line_b) {
-                            merge_count += 1;
-                            if debug {
-                                println!("Merged lines {} and {} due to shared value {}", 
-                                    index_to_line[line_a], index_to_line[line_b], value);
-                            }
-                        }
-                    }
-                }
-            }
-            pb.inc(1);
-        }
-        
-        // Third pass: Transitive closure - use a true multi-threaded approach
-        println!("Applying transitive closure to identity groups...");
-        let mut transitive_merges = 0;
-        let mut iterations = 0;
-
-        // Configure thread pool for optimal performance
-        let num_threads = num_cpus::get();
-        println!("Using {} CPU threads for parallel processing", num_threads);
-
-        // Build value-to-root mapping for faster lookups - use more efficient data structure
-        let mut value_to_roots: HashMap<String, Vec<usize>> = HashMap::new();
-        for (value, _) in &value_to_lines {
-            value_to_roots.insert(value.clone(), Vec::new());
-        }
-
-        loop {
-            let iteration_start = Instant::now();
-            iterations += 1;
-            
-            // Compute all roots in parallel batches
-            println!("  Computing current identity roots...");
-            
-            let chunks: Vec<_> = (0..disjoint_set.size).collect::<Vec<_>>()
-                .chunks(disjoint_set.size / num_threads + 1)
-                .map(|c| c.to_vec())
-                .collect();
-            
-            let line_roots_chunks: Vec<_> = chunks.par_iter().map(|chunk| {
-                let mut local_roots = Vec::with_capacity(chunk.len());
-                let mut local_disjoint_set = DisjointSet {
-                    parent: disjoint_set.parent.clone(),
-                    rank: disjoint_set.rank.clone(),
-                    size: disjoint_set.size,
-                };
+        // Build line-to-values mapping in parallel
+        value_to_lines.par_iter()
+            .for_each(|(value, line_indices)| {
+                let mut local_map = HashMap::<usize, HashSet<String>>::new();
                 
-                for &i in chunk {
-                    let root = local_disjoint_set.find(i);
-                    local_roots.push((i, root));
+                for &line_idx in line_indices {
+                    local_map.entry(line_idx).or_default().insert(value.clone());
                 }
                 
-                local_roots
-            }).collect();
-            
-            // Merge results and update the main DisjointSet
-            let mut line_roots = Vec::with_capacity(disjoint_set.size);
-            line_roots.resize(disjoint_set.size, 0);
-            
-            for chunk in line_roots_chunks {
-                for (i, root) in chunk {
-                    line_roots[i] = root;
-                }
-            }
-            
-            // Update roots set and value-to-roots map in parallel
-            let mut roots = HashSet::new();
-            let values_chunk_size = value_to_lines.len() / num_threads + 1;
-            
-            // First collect all roots
-            for &root in &line_roots {
-                roots.insert(root);
-            }
-            
-            // Clear previous mappings
-            for roots_vec in value_to_roots.values_mut() {
-                roots_vec.clear();
-            }
-            
-            // Update value-to-roots mapping in parallel
-            let value_chunks: Vec<_> = line_to_values.par_iter()
-                .map(|(&i, values)| {
-                    let root = line_roots[i];
-                    let mut local_map = HashMap::new();
-                    
-                    for value in values {
-                        local_map.entry(value.clone())
-                            .or_insert_with(Vec::new)
-                            .push(root);
-                    }
-                    
-                    local_map
-                })
-                .collect();
-            
-            // Merge value-to-roots maps
-            let mutex_map = Arc::new(Mutex::new(&mut value_to_roots));
-            value_chunks.into_par_iter().for_each(|local_map| {
-                let mut lock = mutex_map.lock().unwrap();
-                for (value, roots) in local_map {
-                    if let Some(global_roots) = lock.get_mut(&value) {
-                        global_roots.extend(roots);
-                    }
+                // Merge local map into global map
+                let mut global_map = line_to_values_mutex.lock().unwrap();
+                for (line_idx, values) in local_map {
+                    global_map.entry(line_idx).or_default().extend(values);
                 }
             });
+        
+        let line_to_values = Arc::try_unwrap(line_to_values_mutex)
+            .expect("Failed to unwrap line_to_values_mutex")
+            .into_inner()
+            .unwrap();
+        
+        // Second pass: For each value, merge all lines that contain it
+        let mut merge_count = 0;
+        
+        // Split values into chunks for parallel processing
+        let value_chunks: Vec<Vec<String>> = {
+            let value_keys: Vec<String> = value_to_lines.keys().cloned().collect();
+            let chunk_size = std::cmp::max(1, value_keys.len() / num_cpus::get());
             
-            // Deduplicate roots in value_to_roots
-            for roots_vec in value_to_roots.values_mut() {
-                roots_vec.sort_unstable();
-                roots_vec.dedup();
+            let mut chunks = Vec::new();
+            let mut current_chunk = Vec::new();
+            
+            for key in value_keys {
+                current_chunk.push(key);
+                
+                if current_chunk.len() >= chunk_size {
+                    chunks.push(std::mem::replace(&mut current_chunk, Vec::new()));
+                }
             }
             
-            println!("  Current number of distinct identity groups: {}", roots.len());
-            
-            // Find values shared across multiple roots
-            let shared_values: Vec<String> = value_to_roots.par_iter()
-                .filter_map(|(value, roots_vec)| {
-                    if roots_vec.len() >= 2 {
-                        Some(value.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            
-            println!("  Found {} values shared across different identity groups", shared_values.len());
-            
-            if shared_values.is_empty() {
-                println!("  No more shared values found, stopping iterations");
-                break;
+            if !current_chunk.is_empty() {
+                chunks.push(current_chunk);
             }
             
-            // Compute merge operations in parallel
-            let merge_ops: HashSet<(usize, usize)> = shared_values.par_iter()
-                .flat_map(|value| {
-                    let roots_vec = &value_to_roots[value];
-                    let mut pairs = HashSet::new();
+            chunks
+        };
+        
+        // Process each chunk of values in parallel
+        let merge_ops: Vec<Vec<(usize, usize)>> = value_chunks.par_iter()
+            .map(|chunk| {
+                let mut local_merges = Vec::new();
+                
+                for value in chunk {
+                    let line_indices = &value_to_lines[value];
                     
-                    if roots_vec.len() >= 2 {
-                        for i in 0..roots_vec.len() {
-                            for j in i+1..roots_vec.len() {
-                                pairs.insert((roots_vec[i].min(roots_vec[j]), 
-                                            roots_vec[i].max(roots_vec[j])));
+                    if line_indices.len() >= 2 {
+                        // For each pair of lines that share this value
+                        for i in 0..line_indices.len() {
+                            for j in i+1..line_indices.len() {
+                                local_merges.push((line_indices[i], line_indices[j]));
                             }
                         }
                     }
                     
-                    pairs.into_iter().collect::<Vec<_>>()
-                })
-                .collect();
-            
-            println!("  Generated {} potential merge operations", merge_ops.len());
-            
-            // Apply merges in batches with periodic sync
-            let mut merged_this_round = 0;
-            let batch_size = 10000;
-            
-            for batch in merge_ops.into_iter().collect::<Vec<_>>().chunks(batch_size) {
-                let batch_merges = batch.par_iter()
-                    .map(|&(root_a, root_b)| {
-                        let mut local_disjoint_set = DisjointSet {
-                            parent: disjoint_set.parent.clone(),
-                            rank: disjoint_set.rank.clone(),
-                            size: disjoint_set.size,
-                        };
-                        
-                        let merged = local_disjoint_set.union(root_a, root_b);
-                        if merged {
-                            Some((root_a, root_b, local_disjoint_set.parent[root_b]))
-                        } else {
-                            None
-                        }
-                    })
-                    .filter_map(|x| x)
-                    .collect::<Vec<_>>();
+                    // Update progress bar
+                    pb.inc(1);
+                }
                 
-                // Apply successful merges to main disjoint set
-                for (root_a, root_b, _) in batch_merges {
-                    if disjoint_set.union(root_a, root_b) {
-                        merged_this_round += 1;
-                        transitive_merges += 1;
+                local_merges
+            })
+            .collect();
+        
+        // Apply all merge operations to the DisjointSet
+        for merges in merge_ops {
+            for (a, b) in merges {
+                if disjoint_set.union(a, b) {
+                    merge_count += 1;
+                    if debug {
+                        println!("Merged lines {} and {} due to shared value", 
+                            index_to_line[a], index_to_line[b]);
                     }
                 }
             }
-            
-            println!("  Iteration {}: merged {} identity groups in {:.2}s", 
-                iterations, merged_this_round, iteration_start.elapsed().as_secs_f64());
-            
-            // Stop if no more merges or too many iterations
-            if merged_this_round == 0 || iterations >= 5 {
-                break;
-            }
-        }
-
-        println!("Applied {} transitive merges in {} iterations", transitive_merges, iterations);
-        pb.finish_with_message("Identity merging complete");
-
-        println!("Merged {} identities (plus {} transitive merges) in {:.2}s", 
-            merge_count, transitive_merges, union_start.elapsed().as_secs_f64());
-        // Step 4: Build merged identities
-        let build_start = Instant::now();
-        println!("Building identity groups...");
-        
-        // Map each line to its root identity
-        let mut line_to_root: HashMap<usize, usize> = HashMap::with_capacity(line_to_index.len());
-        for i in 0..line_to_index.len() {
-            let root = disjoint_set.find(i);
-            line_to_root.insert(i, root);
         }
         
-        // Group entries by identity root
+        println!("\nApplied {} initial merges", merge_count);
+        
+        // Apply transitive closure unless fast mode is enabled
+        let mut transitive_merges = 0;
         let mut identity_groups: HashMap<usize, Vec<usize>> = HashMap::new();
-        for (idx, entry) in entries.iter().enumerate() {
-            let line_idx = line_to_index[&entry.line];
-            let root = line_to_root[&line_idx];
-            identity_groups.entry(root).or_default().push(idx);
+
+
+        if !args.fast_mode {
+            println!("Building identity groups with transitive closure...");
+            let closure_start = Instant::now();
+            
+            // We need to implement proper transitive closure by processing the values again
+            // and ensuring all lines that share ANY value are connected
+            
+            println!("Applying transitive closure to merge identities sharing values...");
+            
+            // Calculate frequency threshold
+            let max_occurrences = if args.max_frequency > 0.0 {
+                (args.max_frequency / 100.0 * line_count as f64) as usize
+            } else {
+                usize::MAX
+            };
+            
+            // Collect all value-line relationships for non-common values
+            let mut value_to_lines: HashMap<String, Vec<usize>> = HashMap::new();
+            
+            for (idx, entry) in entries.iter().enumerate() {
+                // Apply type filter if specified
+                if let Some(ref types_str) = args.merge_types {
+                    let allowed_types: HashSet<&str> = types_str.split(',').map(|s| s.trim()).collect();
+                    if !allowed_types.contains(entry.entry_type.as_str()) {
+                        continue;
+                    }
+                }
+                
+                let key = format!("{}:{}", entry.entry_type, entry.value);
+                value_to_lines.entry(key).or_default().push(idx);
+            }
+            
+            // Filter out common values
+            let original_count = value_to_lines.len();
+            value_to_lines.retain(|_, indices| indices.len() <= max_occurrences);
+            println!("Using {} values for transitive closure (filtered from {})", 
+                     value_to_lines.len(), original_count);
+            
+            // Now apply transitive closure: if two entries share ANY value, they should be in the same identity
+            let mut transitive_merges = 0;
+            let pb = ProgressBar::new(value_to_lines.len() as u64);
+            pb.set_message("Applying transitive closure...");
+            
+            for (value, entry_indices) in value_to_lines {
+                // For each value, get the line indices for all entries that have this value
+                let mut line_indices = Vec::new();
+                for &entry_idx in &entry_indices {
+                    if let Some(&line_idx) = line_to_index.get(&entries[entry_idx].line) {
+                        line_indices.push(line_idx);
+                    }
+                }
+                
+                // Connect all lines that share this value
+                if line_indices.len() >= 2 {
+                    let first_line_idx = line_indices[0];
+                    for &other_line_idx in &line_indices[1..] {
+                        if disjoint_set.union(first_line_idx, other_line_idx) {
+                            transitive_merges += 1;
+                        }
+                    }
+                }
+                
+                pb.inc(1);
+            }
+            
+            pb.finish_with_message(format!("Applied {} transitive merges", transitive_merges));
+            
+            // Now build identity groups from the updated disjoint set
+            println!("Building final identity groups from updated disjoint set...");
+            
+            // Map each line to its root identity using the updated disjoint_set
+            let line_to_root: HashMap<usize, usize> = (0..disjoint_set.size)
+                .map(|i| (i, disjoint_set.find(i)))
+                .collect();
+            
+            // Group entries by identity root
+            let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+            for (idx, entry) in entries.iter().enumerate() {
+                if let Some(&line_idx) = line_to_index.get(&entry.line) {
+                    let root = line_to_root[&line_idx];
+                    groups.entry(root).or_default().push(idx);
+                }
+            }
+            
+            println!("Built {} identity groups with {} transitive merges in {:.2}s", 
+                     groups.len(), transitive_merges, closure_start.elapsed().as_secs_f64());
+            identity_groups = groups;
+        } else {
+            println!("Fast mode enabled - skipping transitive closure step");
+            
+            // Use the original identity building logic for fast mode
+            let build_start = Instant::now();
+            println!("Building identity groups (fast mode)...");
+            
+            // Map each line to its root identity
+            let line_to_root: HashMap<usize, usize> = (0..disjoint_set.size)
+                .map(|i| (i, disjoint_set.find(i)))
+                .collect();
+            
+            // Group entries by identity root
+            let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+            for (idx, entry) in entries.iter().enumerate() {
+                if let Some(&line_idx) = line_to_index.get(&entry.line) {
+                    let root = line_to_root[&line_idx];
+                    groups.entry(root).or_default().push(idx);
+                }
+            }
+            
+            println!("Built {} identity groups in {:.2}s", groups.len(), build_start.elapsed().as_secs_f64());
+            identity_groups = groups;
         }
-        
-        println!("Built {} identity groups in {:.2}s", identity_groups.len(), build_start.elapsed().as_secs_f64());
-        
-        // Map roots to sequential identity numbers
+                
+        println!("Total number of identity groups: {}", identity_groups.len());        // Map roots to sequential identity numbers
         let mut roots: Vec<usize> = identity_groups.keys().cloned().collect();
         roots.sort_unstable();
         
@@ -575,12 +698,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             println!("\nEntries for Identity_{}: ({} entries)", selected_id, filtered_entries.len());
             let json = serde_json::to_string_pretty(&filtered_entries)?;
-            println!("{}", json);
+            
+            // Write to file or print to console
+            if let Some(ref output_path) = args.output {
+                std::fs::write(output_path, &json)?;
+                println!("Output written to {}", output_path.display());
+            } else {
+                println!("{}", json);
+            }
             
             println!("Output generated in {:.2}s", output_start.elapsed().as_secs_f64());
         } else {
             println!("Invalid identity number: {}", selected_id);
-        }   
+        }
     } else {
         println!("Use -l or --line to enable identity tracing");
     }
