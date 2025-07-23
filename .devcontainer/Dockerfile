@@ -8,6 +8,7 @@ RUN apt-get update; \
         python3-pip \
         python3-tz \
         python3-flask \
+        python3-requests \
         python3-watchdog && \
     rm -rf /var/lib/apt/lists/*
 
