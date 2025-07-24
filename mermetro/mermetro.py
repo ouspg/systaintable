@@ -1,7 +1,7 @@
 import json
 import time
 import sys
-from pytz import timezone
+import argparse
 from datetime import datetime
 from flask import Flask, render_template, jsonify, send_from_directory
 from watchdog.observers import Observer
@@ -17,33 +17,6 @@ TECHNICAL_TYPES = {'TTY', 'dsa', 'asdasd', 'dsadsa'}
 current_metromap = ""
 node_details = {}
 group_merge_log = {}
-
-def find_json():
-    """Etsii JSON-tiedoston, joka sisältää metrokartan"""
-    global lokitiedosto
-    json_files = [f for f in os.listdir('.') if f.endswith('.json')]
-    if not json_files:
-        print("No .json files were found")
-        sys.exit()
-    print("Found .json files:")
-    print("(0) Exit")
-    for idx, fname in enumerate(json_files, 1):
-        print(f"({idx}) {fname}")
-        time.sleep(0.1)
-    while True:
-        try:
-            answer = int(input("Choose a log file (a number): "))
-            if answer == 0:
-                print("Shutting down")
-                sys.exit()
-            if 1 <= answer <= len(json_files):
-                lokitiedosto = json_files[answer - 1]
-                print(f"Using file: {lokitiedosto}")
-                break
-            else:
-                print("Invalid choice, please choose a number from the list.")
-        except ValueError:
-            print("Invalid input, please enter a number.")
 
 def parse_timestamp_to_datetime(timestamp_str):
     """
@@ -75,41 +48,37 @@ def parse_identities(entry):
     entry_type = entry['type']
     entry_value = entry['value']
     
-    if entry_type == 'URL':
-        if '?' in entry_value:
-            display_url = entry_value.split('?')[0]
-        else:
-            display_url = entry_value
-        
-        display_url = display_url.replace('@', '_AT_').replace('[', '_')
-        url_id = entry_value.replace("://", "_").replace("/", "_").replace("?","_").replace("~","_").replace("&","_").replace("=","_").replace("#","_").replace("%","_")
-        identities.append(f'URL_{url_id}([URL<br/>{display_url}])')
-    else:
-        replacements = {
-            " ": "_", "@": "_AT_", "%": "_", ":": "_", "[": "_", "]": "_",
-            ".": "_", "=": "_", "/": "_", "?": "_", "(": "_", ")": "_",
-            "~": "_", "&": "_", "#": "_"
-        }
-        
-        clean_value = entry_value
-        for old, new in replacements.items():
-            clean_value = clean_value.replace(old, new)
-        display_value = entry_value.replace('@', '_AT_').replace('[', '_')
-
-        type_mapping = {
-            'IP': f'IPv4_{clean_value}([IP-Address<br/>{display_value}])',
-            'DNSname': f'DNS_{clean_value}([DNSname<br/>{display_value}])',
-            'MAC-osoite': f'MAC_{clean_value}([MAC-Address<br/>{display_value}])',
-            'Username': f'User_{clean_value}([User<br/>{display_value}])',
-            'Email': f'Email_{clean_value}([Email<br/>{display_value}])',
-            'Hostname': f'Hostname_{clean_value}([Hostname<br/>{display_value}])',
-            'TTY': f'TTY_{clean_value}([TTY<br/>{display_value}])',
-            'Example': f'Example_{clean_value}([Example<br/>{display_value}])',
-            'Example2': f'Example2_{clean_value}([Example2<br/>{display_value}])',
-        }
-        
-        if entry_type in type_mapping:
-            identities.append(type_mapping[entry_type])
+    link_prefixes = ("http://", "https://", "www.")
+    if entry_value.lower().startswith(link_prefixes):
+        href = entry_value if entry_value.lower().startswith(("http://", "https://")) else f"http://{entry_value}"
+        display_url = entry_value.split('?')[0] if '?' in entry_value else entry_value
+        link_id = entry_value.replace("://", "_").replace("/", "_").replace("?","_").replace("~","_").replace("&","_").replace("=","_").replace("#","_").replace("%","_").replace(" ", "_")
+        label = f"<a href='{href}' target='_blank'>{display_url}</a>"
+        identities.append(f"{entry_type}_{link_id}([{entry_type}<br>{label}])")
+        return identities
+    
+    replacements = {
+        " ": "_", "@": "_AT_", "%": "_", ":": "_", "[": "_", "]": "_",
+        ".": "_", "=": "_", "/": "_", "?": "_", "(": "_", ")": "_",
+        "~": "_", "&": "_", "#": "_"
+    }
+    clean_value = entry_value
+    for old, new in replacements.items():
+        clean_value = clean_value.replace(old, new)
+    display_value = entry_value.replace('@', '_AT_').replace('[', '_')
+    type_mapping = {
+        'IP': f'IPv4_{clean_value}([IP-Address<br/>{display_value}])',
+        'DNSname': f'DNSname_{clean_value}([DNSname<br/>{display_value}])',
+        'MAC': f'MAC_{clean_value}([MAC-Address<br/>{display_value}])',
+        'Username': f'Username_{clean_value}([Username<br/>{display_value}])',
+        'Email': f'Email_{clean_value}([Email<br/>{display_value}])',
+        'Hostname': f'Hostname_{clean_value}([Hostname<br/>{display_value}])',
+        'TTY': f'TTY_{clean_value}([TTY<br/>{display_value}])',
+        'Example': f'Example_{clean_value}([Example<br/>{display_value}])',
+        'Example2': f'Example2_{clean_value}([Example2<br/>{display_value}])',
+    }
+    if entry_type in type_mapping:
+        identities.append(type_mapping[entry_type])
     
     return identities
 
@@ -124,7 +93,11 @@ def _process_line_chunk(chunk_data):
     local_technical_data = {}
     
     try:
-        with open("common_values.txt", "r", encoding="utf-8") as f:
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
+            
+        with open(common_values_path, "r", encoding="utf-8") as f:
             common_entries = set(f.read().splitlines())
     except FileNotFoundError:
         common_entries = set()
@@ -737,20 +710,21 @@ def api_search(search_term):
         if 'entries' in details:
             for entry in details['entries']:
                 match_found = False
-                
+
+                # formatted_time jätetään jos halutaan lisätä se switch, (iso tai finnish time)
+                entry_time = entry.get('formatted_time', entry.get('timestamp', ''))
+                entry_value = entry.get('value', '').lower()
+
                 if is_timestamp_search:
-                    entry_time = entry.get('formatted_time', '')
                     if clean_search_term in entry_time:
                         match_found = True
                 elif is_combined_search:
-                    entry_time = entry.get('formatted_time', '')
-                    entry_value = entry.get('value', '').lower()
                     if text_part in entry_value and time_part in entry_time:
                         match_found = True
                 else:
-                    if search_lower in entry.get('value', '').lower():
+                    if search_lower in entry_value:
                         match_found = True
-                
+
                 if match_found:
                     if is_timestamp_search:
                         if '.' in clean_search_term and ':' in clean_search_term:
@@ -759,6 +733,8 @@ def api_search(search_term):
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Date match: {entry_time})"
                         elif ':' in clean_search_term and '.' not in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Time match: {entry_time})"
+                        else:
+                            display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Timestamp match: {entry_time})"
                     elif is_combined_search:
                         display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {entry_value} at {entry_time})"
                     else:
@@ -775,19 +751,20 @@ def api_search(search_term):
             for entry in details['technical_entries']:
                 match_found = False
                 
+                # formatted_time jätetään jos halutaan lisätä se switch, (iso tai finnish time)
+                entry_time = entry.get('formatted_time', entry.get('timestamp', ''))
+                entry_value = entry.get('value', '').lower()
+
                 if is_timestamp_search:
-                    entry_time = entry.get('formatted_time', '')
                     if clean_search_term in entry_time:
                         match_found = True
                 elif is_combined_search:
-                    entry_time = entry.get('formatted_time', '')
-                    entry_value = entry.get('value', '').lower()
                     if text_part in entry_value and time_part in entry_time:
                         match_found = True
                 else:
-                    if search_lower in entry.get('value', '').lower():
+                    if search_lower in entry_value:
                         match_found = True
-                
+
                 if match_found:
                     if is_timestamp_search:
                         if '.' in clean_search_term and ':' in clean_search_term:
@@ -831,7 +808,11 @@ def api_technical_entries():
     technical_values = set()
     
     try:
-        with open("common_values.txt", "r", encoding="utf-8") as f:
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
+            
+        with open(common_values_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
@@ -862,7 +843,7 @@ def create_html_file(metromap_content):
 <head>
     <title>Mermetro</title>
     <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.9/dist/mermaid.esm.min.mjs';
         mermaid.initialize({{ startOnLoad: true, maxTextSize: 10000000000, maxEdges: 500000 }});
     </script>
     <style>
@@ -878,7 +859,7 @@ def create_html_file(metromap_content):
 </body>
 </html>"""
     
-    with open('metrokartta.html', 'w', encoding='utf-8') as f:
+    with open('data/metrokartta.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
 
 def start_file_watcher():
@@ -890,18 +871,30 @@ def start_file_watcher():
     return observer
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Example: "
+        "   python3 mermetro.py data/lokitiedosto.json",
+    )
+    parser.add_argument("jsonfile", help="Path to the log JSON file")
+    args = parser.parse_args()
+    if not os.path.isfile(args.jsonfile):
+        print(f"Error: File '{args.jsonfile}' not found.\n")
+        parser.print_help()
+        exit(1)
+
+    global lokitiedosto
+    lokitiedosto = args.jsonfile
+
     print("\nStarting up...")
     print(f"Time: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
-    
-    find_json()
     process_json_file()
     observer = start_file_watcher()
 
-    with open('metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
+    with open('data/metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
         f.write(current_metromap)
     create_html_file(current_metromap)
-    
-    print("\nCreated files:")
+
+    print("\nCreated files to /data:")
     print("   metrokartta_koodi.txt  -> Mermaid-code")
     print("   metrokartta.html       -> Static HTML")
     print("\nAccess:")

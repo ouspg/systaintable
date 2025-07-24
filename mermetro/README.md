@@ -16,8 +16,10 @@ mermetro/
 ├── common_values.txt      # List of common values (e.g., DNS servers) to avoid unnecessary grouping
 ├── templates/
 │   ├── sivusto.html       # HTML template for the visualization frontend
+└── data/                  # Safe path for data files (data/* in gitignore)
 └── static/
     ├── favicon.ico        # Site icon
+
 ```
 
 ## Usage
