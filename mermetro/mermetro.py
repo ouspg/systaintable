@@ -3,20 +3,19 @@ import time
 import sys
 import argparse
 from datetime import datetime
-from flask import Flask, render_template, jsonify, send_from_directory
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from flask import Flask, render_template, jsonify, send_from_directory, request
 import os
 from multiprocessing import Pool, cpu_count
 
 app = Flask(__name__)
 
-PERSONAL_TYPES = {'IP', 'MAC', 'Username', 'Email', 'Hostname', 'URL', 'DNSname'}
-TECHNICAL_TYPES = {'TTY', 'dsa', 'asdasd', 'dsadsa'}
+PERSONAL_TYPES = {'IP', 'MAC', 'Username', 'Email', 'Hostname', 'URL', 'DNSname', 'TTY'}
+TECHNICAL_TYPES = {'Example', 'Example2'}
 
 current_metromap = ""
 node_details = {}
 group_merge_log = {}
+excluded_entries = []
 
 def parse_timestamp_to_datetime(timestamp_str):
     """
@@ -48,59 +47,69 @@ def parse_identities(entry):
     entry_type = entry['type']
     entry_value = entry['value']
     
-    link_prefixes = ("http://", "https://", "www.")
-    if entry_value.lower().startswith(link_prefixes):
-        href = entry_value if entry_value.lower().startswith(("http://", "https://")) else f"http://{entry_value}"
-        display_url = entry_value.split('?')[0] if '?' in entry_value else entry_value
-        link_id = entry_value.replace("://", "_").replace("/", "_").replace("?","_").replace("~","_").replace("&","_").replace("=","_").replace("#","_").replace("%","_").replace(" ", "_")
-        label = f"<a href='{href}' target='_blank'>{display_url}</a>"
-        identities.append(f"{entry_type}_{link_id}([{entry_type}<br>{label}])")
-        return identities
-    
-    replacements = {
-        " ": "_", "@": "_AT_", "%": "_", ":": "_", "[": "_", "]": "_",
-        ".": "_", "=": "_", "/": "_", "?": "_", "(": "_", ")": "_",
-        "~": "_", "&": "_", "#": "_"
-    }
-    clean_value = entry_value
-    for old, new in replacements.items():
-        clean_value = clean_value.replace(old, new)
-    display_value = entry_value.replace('@', '_AT_').replace('[', '_')
-    type_mapping = {
-        'IP': f'IPv4_{clean_value}([IP-Address<br/>{display_value}])',
-        'DNSname': f'DNSname_{clean_value}([DNSname<br/>{display_value}])',
-        'MAC': f'MAC_{clean_value}([MAC-Address<br/>{display_value}])',
-        'Username': f'Username_{clean_value}([Username<br/>{display_value}])',
-        'Email': f'Email_{clean_value}([Email<br/>{display_value}])',
-        'Hostname': f'Hostname_{clean_value}([Hostname<br/>{display_value}])',
-        'TTY': f'TTY_{clean_value}([TTY<br/>{display_value}])',
-        'Example': f'Example_{clean_value}([Example<br/>{display_value}])',
-        'Example2': f'Example2_{clean_value}([Example2<br/>{display_value}])',
-    }
-    if entry_type in type_mapping:
-        identities.append(type_mapping[entry_type])
+    if entry_type == 'URL':
+        if '?' in entry_value:
+            display_url = entry_value.split('?')[0]
+        else:
+            display_url = entry_value
+        
+        display_url = display_url.replace('@', '_AT_').replace('[', '_')
+        url_id = entry_value.replace("://", "_").replace("/", "_").replace("?","_").replace("~","_").replace("&","_").replace("=","_").replace("#","_").replace("%","_")
+        identities.append(f'URL_{url_id}([URL<br/>{display_url}])')
+    else:
+        replacements = {
+            " ": "_", "@": "_AT_", "%": "_", ":": "_", "[": "_", "]": "_",
+            ".": "_", "=": "_", "/": "_", "?": "_", "(": "_", ")": "_",
+            "~": "_", "&": "_", "#": "_"
+        }
+        
+        clean_value = entry_value
+        for old, new in replacements.items():
+            clean_value = clean_value.replace(old, new)
+        display_value = entry_value.replace('@', '_AT_').replace('[', '_')
+
+        type_mapping = {
+            'IP': f'IPv4_{clean_value}([IP-Address<br/>{display_value}])',
+            'DNSname': f'DNS_{clean_value}([DNSname<br/>{display_value}])',
+            'MAC-osoite': f'MAC_{clean_value}([MAC-Address<br/>{display_value}])',
+            'Username': f'User_{clean_value}([User<br/>{display_value}])',
+            'Email': f'Email_{clean_value}([Email<br/>{display_value}])',
+            'Hostname': f'Hostname_{clean_value}([Hostname<br/>{display_value}])',
+            'TTY': f'TTY_{clean_value}([TTY<br/>{display_value}])',
+            'Example': f'Example_{clean_value}([Example<br/>{display_value}])',
+            'Example2': f'Example2_{clean_value}([Example2<br/>{display_value}])',
+        }
+        
+        if entry_type in type_mapping:
+            identities.append(type_mapping[entry_type])
     
     return identities
 
 def _process_line_chunk(chunk_data):
-    """Sisäinen funktio - prosessoi yhden riviryhmän rinnakkain"""
-    chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
+    """Funktio prosessoirin"""
+    if len(chunk_data) == 5:
+        chunk_lines, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries = chunk_data
+    else:
+        chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
+        process_technical_types = TECHNICAL_TYPES
+        used_excluded_entries = []
+        
+        try:
+            common_values_path = os.path.join('data', 'common_values.txt')
+            if not os.path.exists(common_values_path):
+                common_values_path = 'common_values.txt'
+                
+            with open(common_values_path, "r", encoding="utf-8") as f:
+                common_entries = set(f.read().splitlines())
+        except FileNotFoundError:
+            common_entries = set()
+    
     local_connections = set()
     local_nodes = set()
     local_node_timestamps = {}
     local_node_counts = {}
     local_node_entries = {}
     local_technical_data = {}
-    
-    try:
-        common_values_path = os.path.join('data', 'common_values.txt')
-        if not os.path.exists(common_values_path):
-            common_values_path = 'common_values.txt'
-            
-        with open(common_values_path, "r", encoding="utf-8") as f:
-            common_entries = set(f.read().splitlines())
-    except FileNotFoundError:
-        common_entries = set()
     
     for line_num, entries in chunk_lines:
         all_line_ids = []
@@ -110,7 +119,9 @@ def _process_line_chunk(chunk_data):
             entry_type = entry['type']
             entry_value = entry['value']
             
-            if entry_value in common_entries or entry_type in TECHNICAL_TYPES:
+            if (entry_value in common_entries or entry_type in process_technical_types) and \
+               entry_value not in used_excluded_entries and \
+               entry_type not in used_excluded_entries:
                 tech_entry = {
                     'type': entry_type,
                     'value': entry_value,
@@ -119,7 +130,7 @@ def _process_line_chunk(chunk_data):
                 }
                 line_technical_data.append(tech_entry)
                 
-            elif entry_type in PERSONAL_TYPES:
+            elif entry_type in PERSONAL_TYPES or entry_value in used_excluded_entries or entry_type in used_excluded_entries:
                 identities = parse_identities(entry)
                 all_line_ids.extend(identities)
                 
@@ -166,7 +177,6 @@ def group_by_person(connections):
     temp_merge_logs = {}
 
     person_groups = []
-    group_counter = 0
 
     for a, b in connections:
         groups_with_a = []
@@ -246,14 +256,6 @@ def group_by_person(connections):
                     new_idx = idx if idx < group_b_idx else idx - 1
                     new_temp_logs[new_idx] = logs
                 temp_merge_logs = new_temp_logs
-                
-                print("-" * 50)
-                print(f"MERGED:")
-                print(f"  Reason: {a_value} <-> {b_value}")
-                print(f"  Group A had: {group_a_str}")
-                print(f"  Group B had: {group_b_str}")
-                print(f"  Result: All combined into position {group_a_idx}")
-                print("-" * 50)
                     
         elif groups_with_a:
             # Vain a on ryhmässä, lisätään b
@@ -273,8 +275,7 @@ def group_by_person(connections):
             if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
                 b_value = b_value.split('?')[0]
                 
-            temp_merge_logs[idx].append(f"ADDED: ({a_value} , {b_value}) -> added to group")
-            print(f"JOINED: {a_value} and {b_value} joined group at position {idx}")
+            temp_merge_logs[idx].append(f"JOINED: ({a_value} , {b_value}) -> added to group")
             
         elif groups_with_b:
             # Vain b on ryhmässä, lisätään a
@@ -294,8 +295,7 @@ def group_by_person(connections):
             if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
                 b_value = b_value.split('?')[0]
                 
-            temp_merge_logs[idx].append(f"ADDED: ({a_value} , {b_value}) -> added to group")
-            print(f"JOINED: {a_value} and {b_value} joined group at position {idx}")
+            temp_merge_logs[idx].append(f"JOINED: ({b_value} , {a_value}) -> added to group")
             
         else:
             # Kumpikaan ei ole ryhmässä, luodaan uusi
@@ -314,7 +314,6 @@ def group_by_person(connections):
                 b_value = b_value.split('?')[0]
                 
             temp_merge_logs[current_idx] = [f"FORMED: ({a_value} , {b_value}) = new group"]
-            print(f"FORMED: {a_value} and {b_value} formed a new group at position {current_idx}")
 
     # Lopuksi luo lopulliset ID:t ja merge_log
     group_merge_log = {}
@@ -443,9 +442,11 @@ def generate_metromap_content(all_nodes, connections):
     
     return content
 
-def process_json_file():
+def process_json_file(reload_requested=False, custom_excluded_entries=None):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
-    global current_metromap, node_details
+    global current_metromap, node_details, excluded_entries
+    
+    used_excluded_entries = custom_excluded_entries if reload_requested else excluded_entries
     
     all_nodes = set()
     connections_set = set()
@@ -459,7 +460,19 @@ def process_json_file():
         with open(lokitiedosto, "r", encoding="utf-8") as f:
             data = json.load(f)
         
-        # Ryhmitellään entryt riveittäin
+        try:
+            common_values_path = os.path.join('data', 'common_values.txt')
+            if not os.path.exists(common_values_path):
+                common_values_path = 'common_values.txt'
+                
+            with open(common_values_path, "r", encoding="utf-8") as f:
+                common_entries = set(f.read().splitlines())
+                
+            if used_excluded_entries:
+                common_entries = common_entries - set(used_excluded_entries)
+        except FileNotFoundError:
+            common_entries = set()
+        
         lines = {}
         for entry in data:
             if 'line' in entry:
@@ -478,10 +491,14 @@ def process_json_file():
         line_items = list(lines.items())
         chunk_size = max(1, len(line_items) // cpu_count())
         
+        process_technical_types = TECHNICAL_TYPES.copy()
+        if used_excluded_entries:
+            process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
+        
         chunks = []
         for i in range(0, len(line_items), chunk_size):
             chunk = line_items[i:i + chunk_size]
-            chunks.append((chunk, PERSONAL_TYPES, TECHNICAL_TYPES))
+            chunks.append((chunk, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries))
         
         with Pool(processes=cpu_count()) as pool:
             results = pool.map(_process_line_chunk, chunks)
@@ -507,8 +524,6 @@ def process_json_file():
                 if node_key not in technical_data:
                     technical_data[node_key] = []
                 technical_data[node_key].extend(tech_list)
-        
-        print(f"Parallel processing completed. Found {len(connections_set)} connections.")
 
         connections = list(connections_set)
         
@@ -630,14 +645,6 @@ def process_json_file():
         
     except Exception as e:
         print(f"JSON Error: {e}")
-
-class JSONFileHandler(FileSystemEventHandler):
-    """Tiedoston seurantaluokka"""
-    def on_modified(self, event):
-        if event.src_path.endswith(lokitiedosto):
-            print("JSON-file modified, updating metromap...")
-            time.sleep(0.2)
-            process_json_file()
 
 @app.route('/')
 def index():
@@ -805,6 +812,7 @@ def favicon():
 @app.route('/api/technical-entries')
 def api_technical_entries():
     """API teknisten ja yleisten entryjen hakuun"""
+    global excluded_entries
     technical_values = set()
     
     try:
@@ -836,6 +844,23 @@ def api_technical_entries():
     
     return jsonify(sorted(list(technical_values)))
 
+@app.route('/api/reload-metromap', methods=['POST'])
+def reload_metromap():
+    """Reload the metromap with custom exclusion settings"""
+    global excluded_entries
+    try:
+        data = request.json
+        custom_excluded_entries = data.get('excludedEntries', [])
+        
+        excluded_entries = custom_excluded_entries
+        
+        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Reload error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
 def create_html_file(metromap_content):
     """Luo staattinen HTML-tiedosto"""
     html_content = f"""<!DOCTYPE html>
@@ -862,14 +887,6 @@ def create_html_file(metromap_content):
     with open('data/metrokartta.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
 
-def start_file_watcher():
-    """Käynnistä tiedoston seuranta"""
-    event_handler = JSONFileHandler()
-    observer = Observer()
-    observer.schedule(event_handler, path='.', recursive=False)
-    observer.start()
-    return observer
-
 def main():
     parser = argparse.ArgumentParser(
         description="Example: "
@@ -880,7 +897,7 @@ def main():
     if not os.path.isfile(args.jsonfile):
         print(f"Error: File '{args.jsonfile}' not found.\n")
         parser.print_help()
-        exit(1)
+        sys.exit(1)
 
     global lokitiedosto
     lokitiedosto = args.jsonfile
@@ -888,7 +905,6 @@ def main():
     print("\nStarting up...")
     print(f"Time: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
     process_json_file()
-    observer = start_file_watcher()
 
     with open('data/metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
         f.write(current_metromap)
@@ -905,9 +921,6 @@ def main():
         app.run(debug=False, host='127.0.0.1', port=5000)
     except KeyboardInterrupt:
         print("\nStopped by user")
-    finally:
-        observer.stop()
-        observer.join()
 
 if __name__ == "__main__":
     main()

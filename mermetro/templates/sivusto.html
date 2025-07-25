@@ -3,7 +3,7 @@
 <head>
     <title>Summary</title>
     <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.9/dist/mermaid.esm.min.mjs';
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.esm.min.mjs';
         mermaid.initialize({ 
             startOnLoad: false,
             flowchart: { useMaxWidth: true, htmlLabels: true },
@@ -15,6 +15,8 @@
         let currentMetromap = '';
         
         let modal, modalTitle, modalContent, searchResults;
+        
+        let excludedEntries = [];
         
         window.showNodeDetails = function(nodeId) {
             window.currentId = nodeId;
@@ -72,7 +74,16 @@
             if (nodeData.merge_log?.length > 0) {
                 content += `
                     <div class="detail-section">
-                        <h4>Group formation:</h4>
+                        <h4>Group formation:
+                            <span class="info-tooltip">
+                                ?
+                                <span class="tooltip-text">
+                                    FORMED: Neither value of a tuple is in a group, so a new group is created.<br/>
+                                    JOINED: First value of a tuple is in a group, so the second value is added to that group.<br/>
+                                    MERGED: Both values of a tuple are in different groups, so the groups are merged.<br/>
+                                </span>
+                            </span>
+                        </h4>
                         <p class="merge-log">${nodeData.merge_log.join('<br/>')}</p>
                     </div>
                 `;
@@ -173,7 +184,13 @@
             modalTitle.textContent = 'Filtered Entries';
             
             const nodeListHtml = technicalData.length > 0 ? 
-                technicalData.map(value => `• ${value}`).join('<br/>') : 'N/A';
+                technicalData.map(value => 
+                    `<div class="checkbox-item">
+                        <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
+                            class="entry-checkbox" value="${value}" checked>
+                        <label for="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}">${value}</label>
+                    </div>`
+                ).join('') : 'N/A';
             
             modalContent.innerHTML = `
                 <div class="detail-section">
@@ -181,12 +198,76 @@
                     <p><strong>Filtered Entries:</strong>
                         <span class="info-tooltip">
                             ?
-                            <span class="tooltip-text">These values are either marked as filtered types or found in common_values.txt file. These entries will not appear as individual entries and will not join, form or merge groups in the metromap.</span>
+                            <span class="tooltip-text">These values are either marked as filtered types or found in common_values.txt file. Unchecking entries will include them in the metromap logic (they can form or merge groups).</span>
                         </span>    
                     </p>
-                    <p>${nodeListHtml}</p>
+                    <div class="checkbox-container">
+                        <button id="selectAllButton" class="filter-button">Select All</button>
+                        <button id="deselectAllButton" class="filter-button">Deselect All</button>
+                        <div class="checkbox-list">${nodeListHtml}</div>
+                    </div>
+                    <div class="reload-container">
+                        <button id="reloadMapButton" class="reload-button">Reload Metromap with Changes</button>
+                    </div>
                 </div>
             `;
+            
+            document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
+                if (excludedEntries.includes(checkbox.value)) {
+                    checkbox.checked = false;
+                }
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        excludedEntries = excludedEntries.filter(item => item !== this.value);
+                    } else {
+                        excludedEntries.push(this.value);
+                    }
+                });
+            });
+            
+            document.getElementById('selectAllButton').addEventListener('click', function() {
+                document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
+                    checkbox.checked = true;
+                });
+                excludedEntries = [];
+            });
+            
+            document.getElementById('deselectAllButton').addEventListener('click', function() {
+                document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
+                    checkbox.checked = false;
+                });
+                excludedEntries = Array.from(document.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
+            });
+            
+            document.getElementById('reloadMapButton').addEventListener('click', function() {
+                this.textContent = 'Reloading...';
+                this.disabled = true;
+                
+                fetch('/api/reload-metromap', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ excludedEntries: excludedEntries })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        modal.style.display = 'none';
+                        updateMetromap();
+                    } else {
+                        alert('Error reloading metromap: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Reload error:', error);
+                    alert('Error reloading metromap');
+                })
+                .finally(() => {
+                    this.textContent = 'Reload Metromap with Changes';
+                    this.disabled = false;
+                });
+            });
             
             modal.style.display = 'block';
         }
@@ -415,7 +496,18 @@
         .mermaid svg g.clickable-node * { cursor: pointer !important; }
         
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
-        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: none; border-radius: 10px; width: 80%; max-width: 800px; max-height: 80vh; overflow-y: auto; font-family: inherit; }
+        .modal-content { 
+            background-color: #fefefe; 
+            margin: 5% auto; 
+            padding: 20px; 
+            border: none; 
+            border-radius: 10px; 
+            width: 80%; 
+            max-width: 800px; 
+            max-height: 80vh; 
+            overflow-y: auto;
+            font-family: inherit; 
+        }
         .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
         .close:hover, .close:focus { color: black; }
         
@@ -585,6 +677,77 @@
             padding-bottom: 5px;
             margin-bottom: 15px;
         }
+
+        .checkbox-container {
+            margin-top: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            background-color: #f9f9f9;
+        }
+        
+        .checkbox-list {
+            margin-top: 10px;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+        }
+        
+        .checkbox-item {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .checkbox-item input {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+        
+        .checkbox-item label {
+            cursor: pointer;
+            word-break: break-all;
+        }
+        
+        .filter-button {
+            background-color: #607D8B;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            margin-right: 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .filter-button:hover {
+            background-color: #455A64;
+        }
+        
+        .reload-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        .reload-button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        
+        .reload-button:hover {
+            background-color: #388E3C;
+        }
+        
+        .reload-button:disabled {
+            background-color: #A5D6A7;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -598,7 +761,7 @@
             <button id="searchButton">Search</button>
             <span class="info-tooltip">
                 ?
-                <span class="tooltip-text">For value search, type value e.g 8.8.8.8
+                <span class="tooltip-text">For normal search, type value e.g 8.8.8.8
                     For timestamp search, add "" e.g. "12-16"
                 For combined search, use 8.8.8.8 "12-16"</span>
             </span>
