@@ -1,49 +1,21 @@
 import json
 import time
 import sys
-from pytz import timezone
+import argparse
 from datetime import datetime
-from flask import Flask, render_template, jsonify, send_from_directory
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from flask import Flask, render_template, jsonify, send_from_directory, request
 import os
 from multiprocessing import Pool, cpu_count
 
 app = Flask(__name__)
 
-PERSONAL_TYPES = {'IP', 'MAC', 'Username', 'Email', 'Hostname', 'URL', 'DNSname'}
-TECHNICAL_TYPES = {'TTY', 'dsa', 'asdasd', 'dsadsa'}
+PERSONAL_TYPES = {'IP', 'MAC', 'Username', 'Email', 'Hostname', 'URL', 'DNSname', 'TTY'}
+TECHNICAL_TYPES = {'Example', 'Example2'}
 
 current_metromap = ""
 node_details = {}
 group_merge_log = {}
-
-def find_json():
-    """Etsii JSON-tiedoston, joka sisältää metrokartan"""
-    global lokitiedosto
-    json_files = [f for f in os.listdir('.') if f.endswith('.json')]
-    if not json_files:
-        print("No .json files were found")
-        sys.exit()
-    print("Found .json files:")
-    print("(0) Exit")
-    for idx, fname in enumerate(json_files, 1):
-        print(f"({idx}) {fname}")
-        time.sleep(0.1)
-    while True:
-        try:
-            answer = int(input("Choose a log file (a number): "))
-            if answer == 0:
-                print("Shutting down")
-                sys.exit()
-            if 1 <= answer <= len(json_files):
-                lokitiedosto = json_files[answer - 1]
-                print(f"Using file: {lokitiedosto}")
-                break
-            else:
-                print("Invalid choice, please choose a number from the list.")
-        except ValueError:
-            print("Invalid input, please enter a number.")
+excluded_entries = []
 
 def parse_timestamp_to_datetime(timestamp_str):
     """
@@ -114,20 +86,30 @@ def parse_identities(entry):
     return identities
 
 def _process_line_chunk(chunk_data):
-    """Sisäinen funktio - prosessoi yhden riviryhmän rinnakkain"""
-    chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
+    """Funktio prosessoirin"""
+    if len(chunk_data) == 5:
+        chunk_lines, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries = chunk_data
+    else:
+        chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
+        process_technical_types = TECHNICAL_TYPES
+        used_excluded_entries = []
+        
+        try:
+            common_values_path = os.path.join('data', 'common_values.txt')
+            if not os.path.exists(common_values_path):
+                common_values_path = 'common_values.txt'
+                
+            with open(common_values_path, "r", encoding="utf-8") as f:
+                common_entries = set(f.read().splitlines())
+        except FileNotFoundError:
+            common_entries = set()
+    
     local_connections = set()
     local_nodes = set()
     local_node_timestamps = {}
     local_node_counts = {}
     local_node_entries = {}
     local_technical_data = {}
-    
-    try:
-        with open("common_values.txt", "r", encoding="utf-8") as f:
-            common_entries = set(f.read().splitlines())
-    except FileNotFoundError:
-        common_entries = set()
     
     for line_num, entries in chunk_lines:
         all_line_ids = []
@@ -137,7 +119,9 @@ def _process_line_chunk(chunk_data):
             entry_type = entry['type']
             entry_value = entry['value']
             
-            if entry_value in common_entries or entry_type in TECHNICAL_TYPES:
+            if (entry_value in common_entries or entry_type in process_technical_types) and \
+               entry_value not in used_excluded_entries and \
+               entry_type not in used_excluded_entries:
                 tech_entry = {
                     'type': entry_type,
                     'value': entry_value,
@@ -146,7 +130,7 @@ def _process_line_chunk(chunk_data):
                 }
                 line_technical_data.append(tech_entry)
                 
-            elif entry_type in PERSONAL_TYPES:
+            elif entry_type in PERSONAL_TYPES or entry_value in used_excluded_entries or entry_type in used_excluded_entries:
                 identities = parse_identities(entry)
                 all_line_ids.extend(identities)
                 
@@ -193,7 +177,6 @@ def group_by_person(connections):
     temp_merge_logs = {}
 
     person_groups = []
-    group_counter = 0
 
     for a, b in connections:
         groups_with_a = []
@@ -273,14 +256,6 @@ def group_by_person(connections):
                     new_idx = idx if idx < group_b_idx else idx - 1
                     new_temp_logs[new_idx] = logs
                 temp_merge_logs = new_temp_logs
-                
-                print("-" * 50)
-                print(f"MERGED:")
-                print(f"  Reason: {a_value} <-> {b_value}")
-                print(f"  Group A had: {group_a_str}")
-                print(f"  Group B had: {group_b_str}")
-                print(f"  Result: All combined into position {group_a_idx}")
-                print("-" * 50)
                     
         elif groups_with_a:
             # Vain a on ryhmässä, lisätään b
@@ -300,8 +275,7 @@ def group_by_person(connections):
             if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
                 b_value = b_value.split('?')[0]
                 
-            temp_merge_logs[idx].append(f"ADDED: ({a_value} , {b_value}) -> added to group")
-            print(f"JOINED: {a_value} and {b_value} joined group at position {idx}")
+            temp_merge_logs[idx].append(f"JOINED: ({a_value} , {b_value}) -> added to group")
             
         elif groups_with_b:
             # Vain b on ryhmässä, lisätään a
@@ -321,8 +295,7 @@ def group_by_person(connections):
             if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
                 b_value = b_value.split('?')[0]
                 
-            temp_merge_logs[idx].append(f"ADDED: ({a_value} , {b_value}) -> added to group")
-            print(f"JOINED: {a_value} and {b_value} joined group at position {idx}")
+            temp_merge_logs[idx].append(f"JOINED: ({b_value} , {a_value}) -> added to group")
             
         else:
             # Kumpikaan ei ole ryhmässä, luodaan uusi
@@ -341,7 +314,6 @@ def group_by_person(connections):
                 b_value = b_value.split('?')[0]
                 
             temp_merge_logs[current_idx] = [f"FORMED: ({a_value} , {b_value}) = new group"]
-            print(f"FORMED: {a_value} and {b_value} formed a new group at position {current_idx}")
 
     # Lopuksi luo lopulliset ID:t ja merge_log
     group_merge_log = {}
@@ -470,9 +442,11 @@ def generate_metromap_content(all_nodes, connections):
     
     return content
 
-def process_json_file():
+def process_json_file(reload_requested=False, custom_excluded_entries=None):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
-    global current_metromap, node_details
+    global current_metromap, node_details, excluded_entries
+    
+    used_excluded_entries = custom_excluded_entries if reload_requested else excluded_entries
     
     all_nodes = set()
     connections_set = set()
@@ -486,7 +460,19 @@ def process_json_file():
         with open(lokitiedosto, "r", encoding="utf-8") as f:
             data = json.load(f)
         
-        # Ryhmitellään entryt riveittäin
+        try:
+            common_values_path = os.path.join('data', 'common_values.txt')
+            if not os.path.exists(common_values_path):
+                common_values_path = 'common_values.txt'
+                
+            with open(common_values_path, "r", encoding="utf-8") as f:
+                common_entries = set(f.read().splitlines())
+                
+            if used_excluded_entries:
+                common_entries = common_entries - set(used_excluded_entries)
+        except FileNotFoundError:
+            common_entries = set()
+        
         lines = {}
         for entry in data:
             if 'line' in entry:
@@ -505,10 +491,14 @@ def process_json_file():
         line_items = list(lines.items())
         chunk_size = max(1, len(line_items) // cpu_count())
         
+        process_technical_types = TECHNICAL_TYPES.copy()
+        if used_excluded_entries:
+            process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
+        
         chunks = []
         for i in range(0, len(line_items), chunk_size):
             chunk = line_items[i:i + chunk_size]
-            chunks.append((chunk, PERSONAL_TYPES, TECHNICAL_TYPES))
+            chunks.append((chunk, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries))
         
         with Pool(processes=cpu_count()) as pool:
             results = pool.map(_process_line_chunk, chunks)
@@ -534,8 +524,6 @@ def process_json_file():
                 if node_key not in technical_data:
                     technical_data[node_key] = []
                 technical_data[node_key].extend(tech_list)
-        
-        print(f"Parallel processing completed. Found {len(connections_set)} connections.")
 
         connections = list(connections_set)
         
@@ -658,14 +646,6 @@ def process_json_file():
     except Exception as e:
         print(f"JSON Error: {e}")
 
-class JSONFileHandler(FileSystemEventHandler):
-    """Tiedoston seurantaluokka"""
-    def on_modified(self, event):
-        if event.src_path.endswith(lokitiedosto):
-            print("JSON-file modified, updating metromap...")
-            time.sleep(0.2)
-            process_json_file()
-
 @app.route('/')
 def index():
     """Pääsivu"""
@@ -737,20 +717,21 @@ def api_search(search_term):
         if 'entries' in details:
             for entry in details['entries']:
                 match_found = False
-                
+
+                # formatted_time jätetään jos halutaan lisätä se switch, (iso tai finnish time)
+                entry_time = entry.get('formatted_time', entry.get('timestamp', ''))
+                entry_value = entry.get('value', '').lower()
+
                 if is_timestamp_search:
-                    entry_time = entry.get('formatted_time', '')
                     if clean_search_term in entry_time:
                         match_found = True
                 elif is_combined_search:
-                    entry_time = entry.get('formatted_time', '')
-                    entry_value = entry.get('value', '').lower()
                     if text_part in entry_value and time_part in entry_time:
                         match_found = True
                 else:
-                    if search_lower in entry.get('value', '').lower():
+                    if search_lower in entry_value:
                         match_found = True
-                
+
                 if match_found:
                     if is_timestamp_search:
                         if '.' in clean_search_term and ':' in clean_search_term:
@@ -759,6 +740,8 @@ def api_search(search_term):
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Date match: {entry_time})"
                         elif ':' in clean_search_term and '.' not in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Time match: {entry_time})"
+                        else:
+                            display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Timestamp match: {entry_time})"
                     elif is_combined_search:
                         display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {entry_value} at {entry_time})"
                     else:
@@ -775,19 +758,20 @@ def api_search(search_term):
             for entry in details['technical_entries']:
                 match_found = False
                 
+                # formatted_time jätetään jos halutaan lisätä se switch, (iso tai finnish time)
+                entry_time = entry.get('formatted_time', entry.get('timestamp', ''))
+                entry_value = entry.get('value', '').lower()
+
                 if is_timestamp_search:
-                    entry_time = entry.get('formatted_time', '')
                     if clean_search_term in entry_time:
                         match_found = True
                 elif is_combined_search:
-                    entry_time = entry.get('formatted_time', '')
-                    entry_value = entry.get('value', '').lower()
                     if text_part in entry_value and time_part in entry_time:
                         match_found = True
                 else:
-                    if search_lower in entry.get('value', '').lower():
+                    if search_lower in entry_value:
                         match_found = True
-                
+
                 if match_found:
                     if is_timestamp_search:
                         if '.' in clean_search_term and ':' in clean_search_term:
@@ -828,10 +812,15 @@ def favicon():
 @app.route('/api/technical-entries')
 def api_technical_entries():
     """API teknisten ja yleisten entryjen hakuun"""
+    global excluded_entries
     technical_values = set()
     
     try:
-        with open("common_values.txt", "r", encoding="utf-8") as f:
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
+            
+        with open(common_values_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
@@ -855,6 +844,23 @@ def api_technical_entries():
     
     return jsonify(sorted(list(technical_values)))
 
+@app.route('/api/reload-metromap', methods=['POST'])
+def reload_metromap():
+    """Reload the metromap with custom exclusion settings"""
+    global excluded_entries
+    try:
+        data = request.json
+        custom_excluded_entries = data.get('excludedEntries', [])
+        
+        excluded_entries = custom_excluded_entries
+        
+        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Reload error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
 def create_html_file(metromap_content):
     """Luo staattinen HTML-tiedosto"""
     html_content = f"""<!DOCTYPE html>
@@ -862,7 +868,7 @@ def create_html_file(metromap_content):
 <head>
     <title>Mermetro</title>
     <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.9/dist/mermaid.esm.min.mjs';
         mermaid.initialize({{ startOnLoad: true, maxTextSize: 10000000000, maxEdges: 500000 }});
     </script>
     <style>
@@ -878,30 +884,33 @@ def create_html_file(metromap_content):
 </body>
 </html>"""
     
-    with open('metrokartta.html', 'w', encoding='utf-8') as f:
+    with open('data/metrokartta.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
 
-def start_file_watcher():
-    """Käynnistä tiedoston seuranta"""
-    event_handler = JSONFileHandler()
-    observer = Observer()
-    observer.schedule(event_handler, path='.', recursive=False)
-    observer.start()
-    return observer
-
 def main():
+    parser = argparse.ArgumentParser(
+        description="Example: "
+        "   python3 mermetro.py data/lokitiedosto.json",
+    )
+    parser.add_argument("jsonfile", help="Path to the log JSON file")
+    args = parser.parse_args()
+    if not os.path.isfile(args.jsonfile):
+        print(f"Error: File '{args.jsonfile}' not found.\n")
+        parser.print_help()
+        sys.exit(1)
+
+    global lokitiedosto
+    lokitiedosto = args.jsonfile
+
     print("\nStarting up...")
     print(f"Time: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
-    
-    find_json()
     process_json_file()
-    observer = start_file_watcher()
 
-    with open('metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
+    with open('data/metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
         f.write(current_metromap)
     create_html_file(current_metromap)
-    
-    print("\nCreated files:")
+
+    print("\nCreated files to /data:")
     print("   metrokartta_koodi.txt  -> Mermaid-code")
     print("   metrokartta.html       -> Static HTML")
     print("\nAccess:")
@@ -912,9 +921,6 @@ def main():
         app.run(debug=False, host='127.0.0.1', port=5000)
     except KeyboardInterrupt:
         print("\nStopped by user")
-    finally:
-        observer.stop()
-        observer.join()
 
 if __name__ == "__main__":
     main()
