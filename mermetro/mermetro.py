@@ -488,15 +488,23 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
         if use_multiprocessing:
             print(f"Using multiprocessing with {cpu_count()} cores. This may take a while...")
             chunk_size = max(1, len(line_items) // cpu_count())
+
+            process_technical_types = TECHNICAL_TYPES.copy()
+            if used_excluded_entries:
+                process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
+
             chunks = []
             for i in range(0, len(line_items), chunk_size):
                 chunk = line_items[i:i + chunk_size]
-                chunks.append((chunk, PERSONAL_TYPES, TECHNICAL_TYPES))
+                chunks.append((chunk, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries))
             with Pool(processes=cpu_count()) as pool:
                 results = pool.map(_process_line_chunk, chunks)
         else:
             print("Processing without multiprocessing...")
-            chunks = [(line_items, PERSONAL_TYPES, TECHNICAL_TYPES)]
+            process_technical_types = TECHNICAL_TYPES.copy()
+            if used_excluded_entries:
+                process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
+            chunks = [(line_items, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries)]
             results = []
             for chunk in chunks:
                 results.append(_process_line_chunk(chunk))
