@@ -1,5 +1,4 @@
 import json
-import time
 import sys
 import argparse
 from datetime import datetime
@@ -442,7 +441,7 @@ def generate_metromap_content(all_nodes, connections):
     
     return content
 
-def process_json_file(reload_requested=False, custom_excluded_entries=None):
+def process_json_file(reload_requested=False, custom_excluded_entries=None, use_multiprocessing=True):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
     global current_metromap, node_details, excluded_entries
     
@@ -454,7 +453,6 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None):
     node_counts = {}
     node_entries = {}
     technical_data = {}
-    value_counts = {}
     
     try:
         with open(lokitiedosto, "r", encoding="utf-8") as f:
@@ -486,22 +484,22 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None):
             print("File is empty.")
             sys.exit()
 
-        print(f"Using multiprocessing with {cpu_count()} cores. This may take a while...")
-        
         line_items = list(lines.items())
-        chunk_size = max(1, len(line_items) // cpu_count())
-        
-        process_technical_types = TECHNICAL_TYPES.copy()
-        if used_excluded_entries:
-            process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
-        
-        chunks = []
-        for i in range(0, len(line_items), chunk_size):
-            chunk = line_items[i:i + chunk_size]
-            chunks.append((chunk, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries))
-        
-        with Pool(processes=cpu_count()) as pool:
-            results = pool.map(_process_line_chunk, chunks)
+        if use_multiprocessing:
+            print(f"Using multiprocessing with {cpu_count()} cores. This may take a while...")
+            chunk_size = max(1, len(line_items) // cpu_count())
+            chunks = []
+            for i in range(0, len(line_items), chunk_size):
+                chunk = line_items[i:i + chunk_size]
+                chunks.append((chunk, PERSONAL_TYPES, TECHNICAL_TYPES))
+            with Pool(processes=cpu_count()) as pool:
+                results = pool.map(_process_line_chunk, chunks)
+        else:
+            print("Processing without multiprocessing...")
+            chunks = [(line_items, PERSONAL_TYPES, TECHNICAL_TYPES)]
+            results = []
+            for chunk in chunks:
+                results.append(_process_line_chunk(chunk))
         
         for chunk_connections, chunk_nodes, chunk_timestamps, chunk_counts, chunk_entries, chunk_technical in results:
             connections_set.update(chunk_connections)
@@ -890,9 +888,10 @@ def create_html_file(metromap_content):
 def main():
     parser = argparse.ArgumentParser(
         description="Example: "
-        "   python3 mermetro.py data/lokitiedosto.json",
+        "   python3 mermetro.py data/lokitiedosto.json -m",
     )
     parser.add_argument("jsonfile", help="Path to the log JSON file")
+    parser.add_argument("-m", "--multiprocessing", action="store_true", help="Enable multiprocessing for processing")
     args = parser.parse_args()
     if not os.path.isfile(args.jsonfile):
         print(f"Error: File '{args.jsonfile}' not found.\n")
@@ -904,7 +903,7 @@ def main():
 
     print("\nStarting up...")
     print(f"Time: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
-    process_json_file()
+    process_json_file(use_multiprocessing=args.multiprocessing)
 
     with open('data/metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
         f.write(current_metromap)
