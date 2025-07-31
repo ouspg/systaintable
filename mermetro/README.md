@@ -33,10 +33,14 @@ pip install -r requirements.txt
 
  Place the `.json` file exported from the Classifier into the `mermetro/data/` directory
 
-Run `mermetro.py` as in the example below and wait, it can take several minutes to complete with larger files
+Run `mermetro.py` as in the example below and wait, it can take several minutes to complete with larger files. Switch -m enables multiprocessing. 
 
 ```console
 python3 mermetro.py data/lokitiedosto.json
+```
+OR
+```console
+python3 mermetro.py data/lokitiedosto.json -m
 ```
 
 Open http://localhost:5000
