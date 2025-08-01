@@ -16,38 +16,62 @@
         let chartDirection = 'TD';
 
         function createTable(entries, title, tooltipText, technicalClass = '') {
-            let table = `
+            return `
                 <div class="entries-section">
                     <h4>${title} <span class="tooltip" title="${tooltipText}">ℹ</span></h4>
                     <div class="table-container">
                         <table class="entries-table${technicalClass ? ' ' + technicalClass : ''}">
-                            <thead>
-                                <tr>
-                                    <th>Line</th>
-                                    <th>Time</th>
-                                    <th>Type</th>
-                                    <th>Value</th>
-                                </tr>
-                            </thead>
+                            <thead><tr><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr></thead>
                             <tbody>
-            `;
-            entries.forEach(entry => {
-                table += `
-                    <tr>
-                        <td>${entry.line}</td>
-                        <td>${entry.timestamp}</td>
-                        <td>${entry.type}</td>
-                        <td class="value-cell" title="${entry.value}">${entry.value}</td>
-                    </tr>
-                `;
-            });
-            table += `
+                                ${entries.map(entry => `
+                                    <tr>
+                                        <td>${entry.line}</td>
+                                        <td>${entry.timestamp}</td>
+                                        <td>${entry.type}</td>
+                                        <td class="value-cell" title="${entry.value}">${entry.value}</td>
+                                    </tr>
+                                `).join('')}
                             </tbody>
                         </table>
                     </div>
                 </div>
             `;
-            return table;
+        }
+
+        function createGroupSection(title, entries) {
+            return `
+                <h4>${title}</h4>
+                ${entries.length > 0 ? `
+                    <div class="group-section">
+                        <ul class="entry-list">
+                            ${entries.map(entry => `<li>• ${entry.value || entry} ${entry.type ? `<span class="entry-type">(${entry.type})</span>` : ''}</li>`).join('')}
+                        </ul>
+                    </div>
+                ` : '<p class="no-entries">N/A</p>'}
+            `;
+        }
+
+        function createDetailsTable(entries, title, tooltipText) {
+            return `
+                <div class="entries-section">
+                    <h4>${title} <span class="tooltip" title="${tooltipText}">ℹ</span></h4>
+                    <div class="table-container">
+                        <table class="entries-table">
+                            <thead><tr><th>Line</th><th>Timestamp</th><th>Type</th><th>Value</th></tr></thead>
+                            <tbody>
+                                ${entries.map(entry => `
+                                    <tr>
+                                        <td>${entry.line || ''}</td>
+                                        <td>${entry.timestamp || ''}</td>
+                                        <td>${entry.type || ''}</td>
+                                        <td class="value-cell" title="${entry.value || ''}">${entry.value || ''}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
         }
 
         window.showNodeDetails = function(nodeId) {
@@ -61,54 +85,116 @@
                     }
                     showNodeOrGroupModal(data);
                 })
-                .catch(error => {
-                    alert(`Failed to fetch details: ${error.message}`);
-                });
+                .catch(error => alert(`Failed to fetch details: ${error.message}`));
         }
 
         function showNodeOrGroupModal(nodeData) {
-            let content = `
-                <div class="node-info">
-                    <p><strong>WIP</strong></p>
-                </div>
-            `;
-            if (nodeData.entries && nodeData.entries.length > 0) {
-                content += createTable(nodeData.entries, 'Personal Entries', 'Entries that contain personal information');
+            let content = '<div class="node-info">';
+
+            if (nodeData.type === 'GroupMerged') {
+                content += '<h4>Merged group</h4>';
+                if (Array.isArray(nodeData.merged_groups)) {
+                    nodeData.merged_groups.forEach((group, idx) => {
+                        content += `<div class="group-section"><b>Group ${idx + 1}:</b><br/>`;
+                        if (Array.isArray(group.entries) && group.entries.length > 0) {
+                            content += '<ul class="entry-list">';
+                            group.entries.forEach(entry => {
+                                content += `<li>• ${entry.value} <span class="entry-type">(${entry.type})</span></li>`;
+                            });
+                            content += '</ul>';
+                        } else {
+                            content += '<p class="no-entries">N/A</p>';
+                        }
+                        content += '</div>';
+                    });
+                } else {
+                    content += '<p>N/A</p>';
+                }
+
+                const allEntries = Array.isArray(nodeData.entries) ? nodeData.entries : [];
+                const uniqueValues = [...new Set(allEntries.map(e => e.value))];
+                content += createGroupSection('All unique entries after merge', uniqueValues);
+
+                content += '<p><b>Reason:</b> Two separate groups were merged because they shared a common tuple connection.</p><br>';
+
+                if (Array.isArray(nodeData.merging_tuple) && nodeData.merging_tuple.length > 0) {
+                    content += createDetailsTable(nodeData.merging_tuple, 'Merging tuple details', 'Details of the entries that caused the merge');
+                } else {
+                    content += '<h4>Merging tuple details <span class="tooltip" title="Details of the entries that caused the merge">ℹ</span></h4><p class="no-entries">N/A</p>';
+                }
             }
-            if (nodeData.technical_entries && nodeData.technical_entries.length > 0) {
-                content += createTable(nodeData.technical_entries, 'Technical Entries', 'Technical entries found on the same lines', 'technical');
+            else if ((nodeData.type === 'Group' || nodeData.type === 'GroupFormed' || nodeData.type === 'GroupAdded' || nodeData.type === 'GroupJoined' || nodeData.type === 'Added') && Array.isArray(nodeData.formed_from) && nodeData.formed_from.length > 0) {
+                
+                if (nodeData.type === 'GroupFormed') {
+                    const tupleEntries = nodeData.formed_from.filter(e => e && e.tuple_line !== undefined);
+                    if (tupleEntries.length >= 2 && tupleEntries.every(e => e.tuple_line === tupleEntries[0].tuple_line)) {
+                        content += `<h4>Group formed from tuple:</h4><p><b>Line ${tupleEntries[0].line}</b> at time ${tupleEntries[0].timestamp}</p>`;
+                        content += createGroupSection('', tupleEntries).replace('<h4></h4>', '');
+                        content += '<p><b>Reason:</b> These entries were found together on the same line and formed a tuple. Neither entry belonged to an existing group.</p><br>';
+                    }
+                } else if (['GroupAdded', 'GroupJoined', 'Added'].includes(nodeData.type)) {
+                    const uniqueValues = nodeData.entries ? [...new Set(nodeData.entries.map(entry => entry.value))] : [];
+                    content += createGroupSection('Group now has:', uniqueValues);
+                    content += '<p><b>Reason:</b> Entry was added to the group because of tuple below.</p><br>';
+                }
+
+                content += createDetailsTable(nodeData.formed_from, 'Forming tuple details', 'Details of the entries that caused this group to form');
             }
-            let title = (nodeData.type === 'Group') ? `Group Details: ${nodeData.value}` : `${nodeData.type}: ${nodeData.value}`;
-            showModal(title, content);
+            else if (nodeData.type === 'Group' && nodeData.merge_log && nodeData.merge_log.length > 0) {
+                const formedLog = nodeData.merge_log.find(e => e.startsWith('FORMED:'));
+                if (formedLog) {
+                    const match = formedLog.match(/FORMED: \((.+?) , (.+?)\)/);
+                    if (match) {
+                        const [entryA, entryB] = [match[1].trim(), match[2].trim()];
+                        const entryAinfo = nodeData.entries ? nodeData.entries.find(e => e.value === entryA) : null;
+                        const entryBinfo = nodeData.entries ? nodeData.entries.find(e => e.value === entryB) : null;
+                        
+                        const formattedEntries = [
+                            entryAinfo ? `${entryA} <span class="entry-type">(line ${entryAinfo.line}, time ${entryAinfo.timestamp})</span>` : entryA,
+                            entryBinfo ? `${entryB} <span class="entry-type">(line ${entryBinfo.line}, time ${entryBinfo.timestamp})</span>` : entryB
+                        ];
+                        
+                        content += createGroupSection('Group formed from:', formattedEntries);
+                        content += '<p><b>Reason:</b> Both entries were not in any group, so a new group was formed.</p>';
+                        content += createDetailsTable([entryAinfo, entryBinfo].filter(Boolean), 'Forming tuple details', 'Details of the two entries that caused this group to form');
+                    }
+                }
+            }
+
+            content += '</div>';
+            showModal(nodeData.value, content);
         }
 
         function addClickEvents() {
             document.querySelectorAll('.node').forEach(element => {
-                element.addEventListener('click', function() {
-                    showNodeDetails(this.id);
-                });
+                if (!element.id || element.id.startsWith('G')) return;
+                const clean = element.cloneNode(true);
+                element.parentNode.replaceChild(clean, element);
+                clean.addEventListener('click', () => showNodeDetails(clean.id));
             });
         }
 
         function addGroupClickEvents() {
             document.querySelectorAll('.mermaid svg g[id]').forEach((element) => {
                 if (element.id && element.id.startsWith('G')) {
-                    element.classList.add('clickable-node');
-                    element.addEventListener('click', function(e) {
+                    const clean = element.cloneNode(true);
+                    element.parentNode.replaceChild(clean, element);
+                    clean.classList.add('clickable-node');
+                    clean.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        showNodeDetails(element.id);
+                        showNodeDetails(clean.id);
                     });
                 }
             });
-            document.querySelectorAll('.mermaid svg .node').forEach((element) => {
-                element.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    let parent = this.closest('[id]');
-                    if (parent && parent.id) {
-                        showNodeDetails(parent.id);
-                    }
-                });
-            });
+        }
+
+        function renderMermaid(timeline) {
+            document.getElementById('formation-timeline-container').innerHTML = `<div class="mermaid">${timeline}</div>`;
+            mermaid.init(undefined, document.querySelector('#formation-timeline-container .mermaid'));
+            setTimeout(() => {
+                addClickEvents();
+                addGroupClickEvents();
+            }, 1000);
         }
 
         async function updateTimeline() {
@@ -118,15 +204,8 @@
                 if (data.timeline !== currentTimeline) {
                     currentTimeline = data.timeline;
                     selectedGroup = data.selected_group;
-                    document.getElementById('formation-timeline-container').innerHTML = `
-                        <div class="mermaid">${currentTimeline}</div>
-                    `;
+                    renderMermaid(currentTimeline);
                     document.getElementById('selected-group').textContent = selectedGroup || 'None';
-                    mermaid.init(undefined, document.querySelector('#formation-timeline-container .mermaid'));
-                    setTimeout(function() {
-                        addClickEvents();
-                        addGroupClickEvents();
-                    }, 1000);
                 }
             } catch (error) {
                 console.error('Error updating timeline:', error);
@@ -137,20 +216,10 @@
             fetch('/api/timeline')
                 .then(response => response.json())
                 .then(data => {
-                    let timeline = data.timeline;
-                    timeline = timeline.replace(/flowchart (TD|LR)/, `flowchart ${chartDirection}`);
-                    document.getElementById('formation-timeline-container').innerHTML = `
-                        <div class="mermaid">${timeline}</div>
-                    `;
-                    mermaid.init(undefined, document.querySelector('#formation-timeline-container .mermaid'));
-                    setTimeout(function() {
-                        addClickEvents();
-                        addGroupClickEvents();
-                    }, 1000);
+                    const timeline = data.timeline.replace(/flowchart (TD|LR)/, `flowchart ${chartDirection}`);
+                    renderMermaid(timeline);
                 })
-                .catch(error => {
-                    console.error('Error updating timeline direction:', error);
-                });
+                .catch(error => console.error('Error updating timeline direction:', error));
         }
 
         function selectGroup(groupId) {
@@ -160,20 +229,11 @@
                     if (data.success) {
                         currentTimeline = data.timeline;
                         selectedGroup = data.selected_group;
-                        document.getElementById('formation-timeline-container').innerHTML = `
-                            <div class="mermaid">${currentTimeline}</div>
-                        `;
+                        renderMermaid(currentTimeline);
                         document.getElementById('selected-group').textContent = selectedGroup;
                         chartDirection = 'TD';
                         const directionBtn = document.getElementById('direction-btn');
-                        if (directionBtn) {
-                            directionBtn.textContent = 'Top Down';
-                        }
-                        mermaid.init(undefined, document.querySelector('#formation-timeline-container .mermaid'));
-                        setTimeout(function() {
-                            addClickEvents();
-                            addGroupClickEvents();
-                        }, 1000);
+                        if (directionBtn) directionBtn.textContent = 'Top Down';
                     } else {
                         alert('Error selecting group: ' + data.error);
                     }
@@ -195,15 +255,11 @@
                     const option = document.createElement('option');
                     option.value = groupId;
                     option.textContent = `${groupId} (${group.count} entries, ${group.nodes - 1} nodes)`;
-                    if (groupId === selectedGroup) {
-                        option.selected = true;
-                    }
+                    if (groupId === selectedGroup) option.selected = true;
                     selector.appendChild(option);
                 });
                 selector.addEventListener('change', function() {
-                    if (this.value) {
-                        selectGroup(this.value);
-                    }
+                    if (this.value) selectGroup(this.value);
                 });
             } catch (error) {
                 console.error('Error loading groups:', error);
@@ -211,10 +267,9 @@
         }
 
         function showModal(title, content) {
-            const modal = document.getElementById('nodeModal');
             document.getElementById('modalTitle').textContent = title;
             document.getElementById('modalContent').innerHTML = content;
-            modal.style.display = 'block';
+            document.getElementById('nodeModal').style.display = 'block';
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -224,22 +279,21 @@
                 directionBtn.textContent = (chartDirection === 'TD') ? 'Top Down' : 'Left Right';
                 updateTimelineWithDirection();
             });
+
             const modal = document.getElementById('nodeModal');
             const groupLogModal = document.getElementById('groupLogModal');
-            document.querySelector('#nodeModal .close').addEventListener('click', function() {
-                modal.style.display = 'none';
-            });
-            document.querySelector('#groupLogModal .close').addEventListener('click', function() {
-                groupLogModal.style.display = 'none';
-            });
+            
+            document.querySelector('#nodeModal .close').addEventListener('click', () => modal.style.display = 'none');
+            document.querySelector('#groupLogModal .close').addEventListener('click', () => groupLogModal.style.display = 'none');
+            
             window.addEventListener('click', function(event) {
                 if (event.target === modal) modal.style.display = 'none';
                 if (event.target === groupLogModal) groupLogModal.style.display = 'none';
             });
+
             loadGroups();
-            if (selectedGroup) {
-                updateTimeline();
-            }
+            if (selectedGroup) updateTimeline();
+
             const observer = new MutationObserver(function(mutations) {
                 mutations.forEach(function(mutation) {
                     if (mutation.addedNodes.length && document.querySelector('.mermaid svg')) {
@@ -250,194 +304,59 @@
                 });
             });
             observer.observe(document.querySelector('.mermaid'), { childList: true, subtree: true });
-            setTimeout(function() {
+            
+            setTimeout(() => {
                 addClickEvents();
                 addGroupClickEvents();
             }, 2000);
         });
 
         setInterval(updateTimeline, 10000);
-
     </script>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; 
-            margin: 20px; 
-            background-color: #f5f5f5; 
-        }
-        .header {
-            background-color: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .status { 
-            color: #4CAF50; 
-            font-weight: bold; 
-        }
-        .mermaid { 
-            text-align: center; 
-            background-color: white; 
-            padding: 20px; 
-            border-radius: 10px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            min-height: 400px;
-        }
-        h1 { 
-            color: #333; 
-            text-align: center; 
-            margin: 0 0 20px 0;
-        }
-        .controls {
-            background-color: white;
-            padding: 15px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .control-group {
-            margin-bottom: 10px;
-        }
-        .control-group label {
-            display: inline-block;
-            width: 120px;
-            font-weight: bold;
-        }
-        #group-selector {
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            min-width: 300px;
-        }
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            overflow: auto;
-            background-color: rgba(0,0,0,0.4);
-        }
-        .modal-content {
-            background-color: #fefefe;
-            margin: 5% auto;
-            padding: 20px;
-            border: none;
-            width: 90%;
-            max-width: 800px;
-            border-radius: 10px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-        .close {
-            color: #aaa;
-            float: right;
-            font-size: 28px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        .close:hover,
-        .close:focus {
-            color: black;
-            text-decoration: none;
-        }
-        .entries-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-        .entries-table th,
-        .entries-table td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        .entries-table th {
-            background-color: #f2f2f2;
-            font-weight: bold;
-        }
-        .entries-table.technical th {
-            background-color: #fff3e0;
-        }
-        .entries-table tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        .value-cell {
-            max-width: 200px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .table-container {
-            max-height: 300px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        .entries-section {
-            margin-bottom: 20px;
-        }
-        .node-info {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        .node-info p {
-            margin: 5px 0;
-        }
-        .merge-log {
-            background-color: #fff3cd;
-            padding: 15px;
-            border-radius: 5px;
-            border: 1px solid #ffeaa7;
-        }
-        .merge-entry {
-            background-color: white;
-            padding: 10px;
-            margin: 5px 0;
-            border-radius: 3px;
-            border-left: 3px solid #f39c12;
-            font-family: monospace;
-            font-size: 12px;
-            white-space: pre-wrap;
-        }
-        .tooltip {
-            cursor: help;
-            color: #666;
-        }
-        .node {
-            cursor: pointer;
-            transition: opacity 0.2s;
-        }
-        .node:hover {
-            opacity: 0.8;
-        }
-        #direction-btn {
-            padding: 6px 18px;
-            font-size: 15px;
-            border: 1px solid #2196f3;
-            background: #fff;
-            color: #2196f3;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            margin-left: 10px;
-        }
-        #direction-btn:hover {
-            background: #e3f2fd;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .header { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .status { color: #4CAF50; font-weight: bold; }
+        .mermaid { text-align: center; background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); min-height: 400px; }
+        h1 { color: #333; text-align: center; margin: 0 0 20px 0; }
+        .controls { background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .control-group { margin-bottom: 10px; }
+        .control-group label { display: inline-block; width: 120px; font-weight: bold; }
+        #group-selector { padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-width: 300px; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: none; width: 90%; max-width: 800px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 80vh; overflow-y: auto; font-family: inherit; }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close:hover, .close:focus { color: black; text-decoration: none; }
+        .entries-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .entries-table th, .entries-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .entries-table th { background-color: #2196F3; color: white; font-weight: bold; }
+        .entries-table.technical th { background-color: #FF9800; color: white; }
+        .entries-table td:first-child, .entries-table td:nth-child(2) { text-align: center; font-weight: bold; color: #1976D2; }
+        .technical-section { margin-top: 20px; padding-top: 15px; border-top: 2px solid #FF9800; }
+        .technical-table td:first-child, .technical-table td:nth-child(2) { text-align: center; font-weight: bold; color: #F57C00; }
+        .entries-table tr:nth-child(even) { background-color: #f9f9f9; }
+        .value-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .table-container { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; }
+        .entries-section { margin-bottom: 20px; }
+        .entries-section h4 { color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 5px; margin-top: 0; }
+        .node-info { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-bottom: 2px solid #2196F3; }
+        .node-info p { margin: 5px 0; }
+        .merge-log { background-color: #fff3cd; padding: 15px; border-radius: 5px; border: 1px solid #ffeaa7; }
+        .merge-entry { background-color: white; padding: 10px; margin: 5px 0; border-radius: 3px; border-left: 3px solid #f39c12; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+        .tooltip { cursor: help; color: #1976D2; }
+        .node { cursor: pointer; transition: opacity 0.2s; }
+        .node:hover { opacity: 0.8; }
+        #direction-btn { padding: 6px 18px; font-size: 15px; border: 1px solid #2196f3; background: #fff; color: #2196f3; border-radius: 5px; cursor: pointer; font-weight: bold; margin-left: 10px; }
+        #direction-btn:hover { background: #e3f2fd; }
+        .group-section { margin-bottom: 15px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 3px solid #2196F3; }
+        .entry-list { margin: 8px 0; padding-left: 0; list-style: none; }
+        .entry-list li { margin: 4px 0; padding: 2px 0; font-family: monospace; font-size: 13px; }
+        .entry-type { color: #666; font-size: 11px; font-style: italic; }
+        .no-entries { color: #999; font-style: italic; margin: 5px 0; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Mermetro2</h1>
-    </div>
+    <div class="header"><h1>Mermetro2</h1></div>
     <div class="controls">
         <div class="control-group">
             <label for="group-selector">Select Group:</label>
