@@ -2,6 +2,33 @@
 
 * Classifier is a simple tool for doing rexep classification of log values.
 
+## Features
+
+- **Multi-pattern detection**: Emails, IP addresses, DNS names, URLs, usernames, TTY references
+- **Multiple interfaces**: CLI, JSON output, Lambda function, MCP server
+- **High performance**: Parallel processing with Rayon for large files
+- **Flexible output**: JSON, human-readable summaries, or raw classifications
+- **Cloud integration**: S3 file processing and pre-signed URL generation
+- **MCP protocol**: Integration with AI tools like Cursor and Claude Desktop
+
+## Usage Guide
+### Basic analysis
+cargo run -- /path/to/logfile.log
+
+### Process only first 1000 lines
+cargo run -- /path/to/logfile.log --limit 1000
+
+### Show statistics only
+cargo run -- /path/to/logfile.log --stats
+
+### Exclude specific pattern types
+cargo run -- /path/to/logfile.log --exclude email,ip
+
+### Verbose output with all matches
+cargo run -- /path/to/logfile.log --verbose
+
+### Sample every 10th line (for huge files)
+cargo run -- /path/to/logfile.log --sample 10
 ## Project tree
 
 ```

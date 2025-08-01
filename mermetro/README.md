@@ -44,3 +44,20 @@ python3 mermetro.py data/lokitiedosto.json -m
 ```
 
 Open http://localhost:5000
+
+### OSX venv
+
+1. Create a virtual environment
+```python3 -m venv venv```
+
+2. Activate the virtual environment
+```source venv/bin/activate```
+
+3. Install pytz (and any other dependencies)
+```pip install pytz flask watchdog```
+
+4. Run mermetro
+```python mermetro.py```
+
+5. To deactivate the virtual environment when done:
+```deactivate```
