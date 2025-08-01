@@ -33,10 +33,31 @@ pip install -r requirements.txt
 
  Place the `.json` file exported from the Classifier into the `mermetro/data/` directory
 
-Run `mermetro.py` as in the example below and wait, it can take several minutes to complete with larger files
+Run `mermetro.py` as in the example below and wait, it can take several minutes to complete with larger files. Switch -m enables multiprocessing. 
 
 ```console
 python3 mermetro.py data/lokitiedosto.json
 ```
+OR
+```console
+python3 mermetro.py data/lokitiedosto.json -m
+```
 
 Open http://localhost:5000
+
+### OSX venv
+
+1. Create a virtual environment
+```python3 -m venv venv```
+
+2. Activate the virtual environment
+```source venv/bin/activate```
+
+3. Install pytz (and any other dependencies)
+```pip install pytz flask watchdog```
+
+4. Run mermetro
+```python mermetro.py```
+
+5. To deactivate the virtual environment when done:
+```deactivate```
