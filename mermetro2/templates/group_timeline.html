@@ -14,6 +14,10 @@
         let currentTimeline = '';
         let selectedGroup = '{{ selected_group }}';
         let chartDirection = 'TD';
+        
+        let modal, modalTitle, modalContent;
+        
+        let excludedEntries = [];
 
         function createTable(entries, title, tooltipText, technicalClass = '') {
             return `
@@ -92,7 +96,7 @@
             let content = '<div class="node-info">';
 
             if (nodeData.type === 'GroupMerged') {
-                content += '<h4>Merged group</h4>';
+                content += '<h4>Merged groups</h4>';
                 if (Array.isArray(nodeData.merged_groups)) {
                     nodeData.merged_groups.forEach((group, idx) => {
                         content += `<div class="group-section"><b>Group ${idx + 1}:</b><br/>`;
@@ -266,13 +270,136 @@
             }
         }
 
+        function showTechnicalModal(technicalData) {
+            modalTitle.textContent = 'Filtered Entries';
+            
+            const nodeListHtml = technicalData.length > 0 ? 
+                technicalData.map(value => 
+                    `<div class="checkbox-item">
+                        <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
+                            class="entry-checkbox" value="${value}" checked>
+                        <label for="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}">${value}</label>
+                    </div>`
+                ).join('') : 'N/A';
+            
+            modalContent.innerHTML = `
+                <div class="detail-section">
+                    <p><strong>Total unique values:</strong> ${technicalData.length}</p>
+                    <p><strong>Filtered Entries:</strong>
+                        <span class="info-tooltip">
+                            ?
+                            <span class="tooltip-text">These values are either marked as filtered types or found in common_values.txt file. Unchecking entries will include them in the metromap logic (they can form or merge groups).</span>
+                        </span>    
+                    </p>
+                    <div class="checkbox-container">
+                        <button id="selectAllButton" class="filter-button">Select All</button>
+                        <button id="deselectAllButton" class="filter-button">Deselect All</button>
+                        <div class="checkbox-list">${nodeListHtml}</div>
+                    </div>
+                    <div class="reload-container">
+                        <button id="reloadMapButton" class="reload-button">Reload Metromap with Changes</button>
+                    </div>
+                </div>
+            `;
+            
+            document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
+                if (excludedEntries.includes(checkbox.value)) {
+                    checkbox.checked = false;
+                }
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        excludedEntries = excludedEntries.filter(item => item !== this.value);
+                    } else {
+                        excludedEntries.push(this.value);
+                    }
+                });
+            });
+            
+            document.getElementById('selectAllButton').addEventListener('click', function() {
+                document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
+                    checkbox.checked = true;
+                });
+                excludedEntries = [];
+            });
+            
+            document.getElementById('deselectAllButton').addEventListener('click', function() {
+                document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
+                    checkbox.checked = false;
+                });
+                excludedEntries = Array.from(document.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
+            });
+            
+            document.getElementById('reloadMapButton').addEventListener('click', function() {
+                this.textContent = 'Reloading...';
+                this.disabled = true;
+                
+                fetch('/api/reload-metromap', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ excludedEntries: excludedEntries })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        modal.style.display = 'none';
+                        updateTimeline();
+                        showRefreshNotification();
+                    } else {
+                        alert('Error reloading metromap: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Reload error:', error);
+                    alert('Error reloading metromap');
+                })
+                .finally(() => {
+                    this.textContent = 'Reload Metromap with Changes';
+                    this.disabled = false;
+                });
+            });
+            
+            modal.style.display = 'block';
+        }
+
+        function showRefreshNotification() {
+            const notification = document.createElement('div');
+            notification.id = 'refreshNotification';
+            notification.className = 'refresh-notification';
+            notification.innerHTML = `
+                <div class="refresh-notification-content">
+                    <h3>Metromap Updated Successfully!</h3>
+                    <strong>Please refresh the page to see the updated groups and timeline.</strong></p>
+                    <div class="refresh-buttons">
+                        <button id="refreshPageButton" class="refresh-page-button">Refresh Page Now</button>
+                        <button id="dismissButton" class="dismiss-button">Dismiss</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            document.getElementById('refreshPageButton').addEventListener('click', function() {
+                location.reload();
+            });
+            
+            document.getElementById('dismissButton').addEventListener('click', function() {
+                notification.remove();
+            });
+        }
+
         function showModal(title, content) {
-            document.getElementById('modalTitle').textContent = title;
-            document.getElementById('modalContent').innerHTML = content;
-            document.getElementById('nodeModal').style.display = 'block';
+            modalTitle.textContent = title;
+            modalContent.innerHTML = content;
+            modal.style.display = 'block';
         }
 
         document.addEventListener('DOMContentLoaded', function() {
+            modal = document.getElementById('nodeModal');
+            modalTitle = document.getElementById('modalTitle');
+            modalContent = document.getElementById('modalContent');
+            
             const directionBtn = document.getElementById('direction-btn');
             directionBtn.addEventListener('click', function() {
                 chartDirection = (chartDirection === 'TD') ? 'LR' : 'TD';
@@ -280,7 +407,6 @@
                 updateTimelineWithDirection();
             });
 
-            const modal = document.getElementById('nodeModal');
             const groupLogModal = document.getElementById('groupLogModal');
             
             document.querySelector('#nodeModal .close').addEventListener('click', () => modal.style.display = 'none');
@@ -289,6 +415,17 @@
             window.addEventListener('click', function(event) {
                 if (event.target === modal) modal.style.display = 'none';
                 if (event.target === groupLogModal) groupLogModal.style.display = 'none';
+            });
+
+            document.getElementById('technicalButton').addEventListener('click', function() {
+                fetch('/api/technical-entries')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.error) {
+                            showTechnicalModal(data);
+                        }
+                    })
+                    .catch(error => console.error('Error:', error));
             });
 
             loadGroups();
@@ -319,10 +456,12 @@
         .status { color: #4CAF50; font-weight: bold; }
         .mermaid { text-align: center; background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); min-height: 400px; }
         h1 { color: #333; text-align: center; margin: 0 0 20px 0; }
-        .controls { background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .controls { background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px; }
         .control-group { margin-bottom: 10px; }
         .control-group label { display: inline-block; width: 120px; font-weight: bold; }
         #group-selector { padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-width: 300px; }
+        #technicalButton { padding: 8px 16px; color: white; border: none; border-radius: 5px; font-size: 14px; cursor: pointer; font-family: inherit; font-weight: bold; background-color: #FF9800; margin-left: auto; }
+        #technicalButton:hover { background-color: #F57C00; opacity: 0.9; }
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
         .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: none; width: 90%; max-width: 800px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 80vh; overflow-y: auto; font-family: inherit; }
         .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
@@ -353,6 +492,35 @@
         .entry-list li { margin: 4px 0; padding: 2px 0; font-family: monospace; font-size: 13px; }
         .entry-type { color: #666; font-size: 11px; font-style: italic; }
         .no-entries { color: #999; font-style: italic; margin: 5px 0; }
+        .detail-section { margin-bottom: 20px; }
+        .detail-section h4 { color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 5px; margin-top: 0; }
+        .detail-section p { color: #333; font-weight: normal; word-wrap: break-word; overflow-wrap: break-word; }
+        .info-tooltip { position: relative; display: inline-block; background-color: #2196F3; color: white; border-radius: 50%; width: 16px; height: 16px; text-align: center; font-size: 12px; font-weight: bold; line-height: 16px; cursor: help; margin-left: 5px; vertical-align: top; }
+        .info-tooltip:hover { background-color: #1976D2; }
+        .tooltip-text { visibility: hidden; width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1001; bottom: 125%; left: 50%; margin-left: -125px; font-size: 13px; font-weight: normal; line-height: 1.3; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+        .tooltip-text::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px; border-width: 5px; border-style: solid; border-color: #333 transparent transparent transparent; }
+        .info-tooltip:hover .tooltip-text { visibility: visible; opacity: 1; }
+        .checkbox-container { margin-top: 15px; border: 1px solid #ddd; border-radius: 5px; padding: 10px; background-color: #f9f9f9; }
+        .checkbox-list { margin-top: 10px; border-top: 1px solid #ddd; padding-top: 10px; }
+        .checkbox-item { margin: 5px 0; display: flex; align-items: center; }
+        .checkbox-item input { margin-right: 8px; cursor: pointer; }
+        .checkbox-item label { cursor: pointer; word-break: break-all; }
+        .filter-button { background-color: #607D8B; color: white; border: none; padding: 5px 10px; border-radius: 4px; margin-right: 10px; cursor: pointer; font-size: 12px; }
+        .filter-button:hover { background-color: #455A64; }
+        .reload-container { margin-top: 20px; text-align: center; }
+        .reload-button { background-color: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 14px; transition: background-color 0.3s; }
+        .reload-button:hover { background-color: #388E3C; }
+        .reload-button:disabled { background-color: #A5D6A7; cursor: not-allowed; }
+        .refresh-notification { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+        .refresh-notification-content { background-color: white; padding: 30px; border-radius: 15px; box-shadow: 0 8px 25px rgba(0,0,0,0.3); text-align: center; max-width: 500px; margin: 20px; animation: slideIn 0.3s ease-out; }
+        .refresh-notification-content h3 { color: #4CAF50; margin: 0 0 15px 0; font-size: 20px; }
+        .refresh-notification-content p { color: #333; margin: 0 0 20px 0; line-height: 1.5; }
+        .refresh-buttons { display: flex; gap: 15px; justify-content: center; }
+        .refresh-page-button { background-color: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        .refresh-page-button:hover { background-color: #388E3C; }
+        .dismiss-button { background-color: #757575; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        .dismiss-button:hover { background-color: #616161; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-50px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
@@ -370,6 +538,7 @@
             <label>Last Update:</label>
             <span class="status">{{ timestamp }}</span>
         </div>
+        <button id="technicalButton">Filtered Entries</button>
     </div>
     <div class="diagram-section">
         <div class="section-header">
