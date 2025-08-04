@@ -123,6 +123,10 @@ struct Args {
 
     #[clap(long)]
     verbose_merges: bool,
+
+    /// Search for a specific value and output its identity group (e.g., "example@email.com")
+    #[clap(short = 's', long = "search")]
+    search_value: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -623,18 +627,100 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             identity_groups = groups;
         }        
 
-        println!("Total number of identity groups: {}", identity_groups.len());
-        
-        // Map roots to sequential identity numbers
+        // Map roots to sequential identity numbers (move this BEFORE the search functionality)
         let mut roots: Vec<usize> = identity_groups.keys().cloned().collect();
         roots.sort_unstable();
-        
+
         let root_to_identity: HashMap<usize, u32> = roots.iter()
             .enumerate()
             .map(|(i, &root)| (root, (i + 1) as u32))
             .collect();
-        
-        // Display available identities
+
+        if let Some(ref search_value) = args.search_value {
+            println!("\nSearching for value: '{}'", search_value);
+            
+            // Check if the value was filtered out as too common
+            let mut found_in_frequency = false;
+            let mut value_count = 0;
+            
+            // Search through all entries to find the value and check frequency
+            for entry in &entries {
+                // Check all possible type:value combinations
+                let key = format!("{}:{}", entry.entry_type, entry.value);
+                if entry.value == *search_value || key == *search_value {
+                    value_count += 1;
+                }
+            }
+            
+            if value_count > max_occurrences {
+                println!("Value '{}' was filtered out as too common (appears {} times, max allowed: {})", 
+                        search_value, value_count, max_occurrences);
+                println!("Use --max-freq to increase the threshold if you want to include this value in identity merging.");
+                return Ok(());
+            }
+            
+            if value_count == 0 {
+                println!("Value '{}' not found in the dataset.", search_value);
+                return Ok(());
+            }
+            
+            // Search for the value in identity groups
+            let mut found_identity = None;
+            let mut matching_entries = Vec::new();
+            
+            for (&root, entry_indices) in &identity_groups {
+                for &idx in entry_indices {
+                    let entry = &entries[idx];
+                    let key = format!("{}:{}", entry.entry_type, entry.value);
+                    if entry.value == *search_value || key == *search_value {
+                        found_identity = Some(root);
+                        matching_entries.push(idx);
+                        break;
+                    }
+                }
+                if found_identity.is_some() {
+                    break;
+                }
+            }
+            
+            if let Some(root) = found_identity {
+                let identity_number = root_to_identity[&root];
+                let entry_indices = &identity_groups[&root];
+                
+                println!("Found value '{}' in Identity_{} ({} total entries)", 
+                        search_value, identity_number, entry_indices.len());
+                
+                // Output the entire identity group
+                let output_start = Instant::now();
+                let mut filtered_entries = Vec::with_capacity(entry_indices.len());
+                
+                for &idx in entry_indices {
+                    let mut entry = entries[idx].clone();
+                    entry.identity = Some(format!("Identity_{}", identity_number));
+                    filtered_entries.push(entry);
+                }
+                
+                let json = serde_json::to_string_pretty(&filtered_entries)?;
+                
+                // Write to file or print to console
+                if let Some(ref output_path) = args.output {
+                    std::fs::write(output_path, &json)?;
+                    println!("Identity group written to {}", output_path.display());
+                } else {
+                    println!("\nIdentity group contents:");
+                    println!("{}", json);
+                }
+                
+                println!("Output generated in {:.2}s", output_start.elapsed().as_secs_f64());
+            } else {
+                println!("Value '{}' found {} times but not part of any identity group (appears only once or filtered out).", 
+                        search_value, value_count);
+            }
+            
+            return Ok(());
+        }
+
+        // Display available identities (remove the duplicate root_to_identity mapping here)
         println!("\nAvailable identities:");
         for &root in &roots {
             let identity_number = root_to_identity[&root];
@@ -678,7 +764,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 value_str
             );
         }
-        
+
         // Get user selection
         println!("\nEnter the identity number to trace (e.g. 1 for Identity_1):");
         let mut selection = String::new();
