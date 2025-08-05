@@ -45,6 +45,7 @@ classifier/
 │   │   # ... and other pattern files
 └── tests/                # Integration tests
     ├── test_patterns.rs  # Tests for patterns
+└── data/                 # Safe path for data files (data/* in gitignore)
 ```
 
 ## Using the classifier
