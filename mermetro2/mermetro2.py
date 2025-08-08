@@ -2,7 +2,7 @@ import argparse
 import json
 import sys
 from datetime import datetime
-from flask import Flask, render_template, jsonify, send_from_directory
+from flask import Flask, render_template, jsonify, send_from_directory, request
 import os
 from multiprocessing import Pool, cpu_count
 
@@ -16,7 +16,8 @@ node_details = {}
 group_merge_log = {}
 selected_group_id = None
 available_groups = {}
-    
+excluded_entries = []
+
 def parse_timestamp_to_datetime(timestamp_str):
     """Muuntaa timestamp-merkkijonon datetime-objektiksi"""
     if timestamp_str == 'N/A':
@@ -79,19 +80,29 @@ def parse_identities(entry):
 
 def _process_line_chunk(chunk_data):
     """Prosessoi yhden riviryhmän rinnakkain"""
-    chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
+    if len(chunk_data) == 5:
+        chunk_lines, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries = chunk_data
+    else:
+        chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
+        process_technical_types = TECHNICAL_TYPES
+        used_excluded_entries = []
+        
+        try:
+            common_values_path = os.path.join('data', 'common_values.txt')
+            if not os.path.exists(common_values_path):
+                common_values_path = 'common_values.txt'
+                
+            with open(common_values_path, "r", encoding="utf-8") as f:
+                common_entries = set(f.read().splitlines())
+        except FileNotFoundError:
+            common_entries = set()
+    
     local_connections = set()
     local_nodes = set()
     local_node_timestamps = {}
     local_node_counts = {}
     local_node_entries = {}
     local_technical_data = {}
-
-    try:
-        with open("data/common_values.txt", "r", encoding="utf-8") as f:
-            common_entries = set(f.read().splitlines())
-    except FileNotFoundError:
-        common_entries = set()
 
     for line_num, entries in chunk_lines:
         all_line_ids = []
@@ -101,7 +112,9 @@ def _process_line_chunk(chunk_data):
             entry_type = entry['type']
             entry_value = entry['value']
             
-            if entry_value in common_entries or entry_type in TECHNICAL_TYPES:
+            if (entry_value in common_entries or entry_type in process_technical_types) and \
+               entry_value not in used_excluded_entries and \
+               entry_type not in used_excluded_entries:
                 tech_entry = {
                     'type': entry_type,
                     'value': entry_value,
@@ -109,7 +122,8 @@ def _process_line_chunk(chunk_data):
                     'line': line_num,
                 }
                 line_technical_data.append(tech_entry)
-            elif entry_type in PERSONAL_TYPES:
+                
+            elif entry_type in PERSONAL_TYPES or entry_value in used_excluded_entries or entry_type in used_excluded_entries:
                 identities = parse_identities(entry)
                 all_line_ids.extend(identities)
                 
@@ -131,6 +145,7 @@ def _process_line_chunk(chunk_data):
                         'value': entry['value'],
                     })
         
+        # Yhdistä tekniset tiedot
         if all_line_ids and line_technical_data:
             for node_id in all_line_ids:
                 node_key = node_id.split('(')[0]
@@ -138,6 +153,7 @@ def _process_line_chunk(chunk_data):
                     local_technical_data[node_key] = []
                 local_technical_data[node_key].extend(line_technical_data)
         
+        # Tärkeä connections
         if all_line_ids:
             local_nodes.update(all_line_ids)
             for i in range(len(all_line_ids)):
@@ -509,9 +525,11 @@ def generate_timeline_content(group_id):
     content += "    classDef group fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px;\n"
     return content
 
-def process_json_file(use_multiprocessing=True):
+def process_json_file(reload_requested=False, custom_excluded_entries=None, use_multiprocessing=True):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
-    global current_timeline, node_details, available_groups
+    global current_timeline, node_details, available_groups, excluded_entries
+    
+    used_excluded_entries = custom_excluded_entries if reload_requested else excluded_entries
     
     all_nodes = set()
     connections_set = set()
@@ -523,6 +541,19 @@ def process_json_file(use_multiprocessing=True):
     try:
         with open(lokitiedosto, "r", encoding="utf-8") as f:
             data = json.load(f)
+        
+        try:
+            common_values_path = os.path.join('data', 'common_values.txt')
+            if not os.path.exists(common_values_path):
+                common_values_path = 'common_values.txt'
+                
+            with open(common_values_path, "r", encoding="utf-8") as f:
+                common_entries = set(f.read().splitlines())
+                
+            if used_excluded_entries:
+                common_entries = common_entries - set(used_excluded_entries)
+        except FileNotFoundError:
+            common_entries = set()
         
         # Ryhmitellään entryt riveittäin
         lines = {}
@@ -540,15 +571,27 @@ def process_json_file(use_multiprocessing=True):
         if use_multiprocessing:
             print(f"Using multiprocessing with {cpu_count()} cores. This may take a while...")
             chunk_size = max(1, len(line_items) // cpu_count())
-            chunks = [(line_items[i:i + chunk_size], PERSONAL_TYPES, TECHNICAL_TYPES) 
-                     for i in range(0, len(line_items), chunk_size)]
-            
+
+            process_technical_types = TECHNICAL_TYPES.copy()
+            if used_excluded_entries:
+                process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
+
+            chunks = []
+            for i in range(0, len(line_items), chunk_size):
+                chunk = line_items[i:i + chunk_size]
+                chunks.append((chunk, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries))
             with Pool(processes=cpu_count()) as pool:
                 results = pool.map(_process_line_chunk, chunks)
         else:
             print("Processing without multiprocessing...")
-            results = [_process_line_chunk((line_items, PERSONAL_TYPES, TECHNICAL_TYPES))]
-
+            process_technical_types = TECHNICAL_TYPES.copy()
+            if used_excluded_entries:
+                process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
+            chunks = [(line_items, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries)]
+            results = []
+            for chunk in chunks:
+                results.append(_process_line_chunk(chunk))
+        
         # Yhdistä tulokset
         for chunk_connections, chunk_nodes, chunk_timestamps, chunk_counts, chunk_entries, chunk_technical in results:
             connections_set.update(chunk_connections)
@@ -737,6 +780,58 @@ def api_visualization(viz_type, group_id):
         })
     else:
         return jsonify({'error': 'Unknown visualization type'}), 400
+
+@app.route('/api/technical-entries')
+def api_technical_entries():
+    """API teknisten ja yleisten entryjen hakuun"""
+    global excluded_entries
+    technical_values = set()
+    
+    try:
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
+            
+        with open(common_values_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    technical_values.add(line)
+    except FileNotFoundError:
+        pass
+    
+    for node_id, details in node_details.items():
+        if details.get('type') != 'Group':
+            if 'technical_entries' in details:
+                for entry in details['technical_entries']:
+                    technical_values.add(entry.get('value', 'Unknown'))
+            
+            if 'entries' in details:
+                for entry in details['entries']:
+                    entry_value = entry.get('value', '')
+                    entry_type = entry.get('type', '')
+                    
+                    if entry_type in TECHNICAL_TYPES:
+                        technical_values.add(entry_value)
+    
+    return jsonify(sorted(list(technical_values)))
+
+@app.route('/api/reload-metromap', methods=['POST'])
+def reload_metromap():
+    """Reload the metromap with custom exclusion settings"""
+    global excluded_entries
+    try:
+        data = request.json
+        custom_excluded_entries = data.get('excludedEntries', [])
+        
+        excluded_entries = custom_excluded_entries
+        
+        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Reload error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
 
 def main():
     parser = argparse.ArgumentParser(

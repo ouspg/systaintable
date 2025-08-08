@@ -182,23 +182,23 @@
 
         function showTechnicalModal(technicalData) {
             modalTitle.textContent = 'Filtered Entries';
-            
+
             const nodeListHtml = technicalData.length > 0 ? 
                 technicalData.map(value => 
                     `<div class="checkbox-item">
                         <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
-                            class="entry-checkbox" value="${value}" checked>
+                            class="entry-checkbox" value="${value}">
                         <label for="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}">${value}</label>
                     </div>`
                 ).join('') : 'N/A';
-            
+
             modalContent.innerHTML = `
                 <div class="detail-section">
                     <p><strong>Total unique values:</strong> ${technicalData.length}</p>
                     <p><strong>Filtered Entries:</strong>
                         <span class="info-tooltip">
                             ?
-                            <span class="tooltip-text">These values are either marked as filtered types or found in common_values.txt file. Unchecking entries will include them in the metromap logic (they can form or merge groups).</span>
+                            <span class="tooltip-text">These values are either marked as filtered types or found in common_values.txt file. Checking entries will include them in the metromap logic (they can form or merge groups).</span>
                         </span>    
                     </p>
                     <div class="checkbox-container">
@@ -211,52 +211,52 @@
                     </div>
                 </div>
             `;
-            
+
             document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
-                if (excludedEntries.includes(checkbox.value)) {
-                    checkbox.checked = false;
-                }
+                checkbox.checked = false;
                 checkbox.addEventListener('change', function() {
                     if (this.checked) {
                         excludedEntries = excludedEntries.filter(item => item !== this.value);
                     } else {
-                        excludedEntries.push(this.value);
+                        if (!excludedEntries.includes(this.value)) {
+                            excludedEntries.push(this.value);
+                        }
                     }
                 });
             });
-            
+
             document.getElementById('selectAllButton').addEventListener('click', function() {
                 document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
                     checkbox.checked = true;
                 });
                 excludedEntries = [];
             });
-            
+
             document.getElementById('deselectAllButton').addEventListener('click', function() {
                 document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
                     checkbox.checked = false;
                 });
                 excludedEntries = Array.from(document.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
             });
-            
+
+            document.getElementById('deselectAllButton').click();
+
             document.getElementById('reloadMapButton').addEventListener('click', function() {
                 this.textContent = 'Reloading...';
                 this.disabled = true;
-                
+
                 fetch('/api/reload-metromap', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ excludedEntries: excludedEntries })
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ excludedEntries: excludedEntries }),
+                    cache: 'no-store'
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        modal.style.display = 'none';
                         updateMetromap();
                     } else {
-                        alert('Error reloading metromap: ' + (data.error || 'Unknown error'));
+                        alert('Reload failed');
                     }
                 })
                 .catch(error => {
@@ -264,11 +264,11 @@
                     alert('Error reloading metromap');
                 })
                 .finally(() => {
-                    this.textContent = 'Reload Metromap with Changes';
+                    this.textContent = 'Reload Metromap';
                     this.disabled = false;
                 });
             });
-            
+
             modal.style.display = 'block';
         }
         
@@ -288,16 +288,37 @@
             });
         }
         
-        async function updateMetromap() {
+        async function updateMetromap(ignoreTimeFilters = false) {
             try {
-                const response = await fetch(`/api/metromap?t=${Date.now()}`);
+                const params = new URLSearchParams();
+                params.append('t', Date.now());
+
+                if (ignoreTimeFilters) {
+                    params.append('reset', '1');
+                } else {
+                    const startDate = document.getElementById('startDate')?.value;
+                    const startTime = document.getElementById('startTime')?.value;
+                    const endDate = document.getElementById('endDate')?.value;
+                    const endTime = document.getElementById('endTime')?.value;
+
+                    if (startDate) {
+                        const startDateTime = startTime ? `${startDate}T${startTime}` : `${startDate}T00:00`;
+                        params.append('start', startDateTime);
+                    }
+                    if (endDate) {
+                        const endDateTime = endTime ? `${endDate}T${endTime}` : `${endDate}T23:59`;
+                        params.append('end', endDateTime);
+                    }
+                }
+
+                const response = await fetch(`/api/metromap?${params.toString()}`);
                 const data = await response.json();
-                
+
                 if (data.metromap !== currentMetromap) {
                     currentMetromap = data.metromap;
                     const container = document.getElementById('metromap-container');
                     container.innerHTML = `<div class="mermaid">${currentMetromap}</div>`;
-                    
+
                     await mermaid.run({ querySelector: '.mermaid' });
                     setTimeout(addClickEvents, 100);
                     document.getElementById('timestamp').textContent = data.timestamp;
@@ -378,18 +399,49 @@
             });
 
             document.getElementById('technicalButton').addEventListener('click', function() {
-                fetch('/api/technical-entries')
-                    .then(response => response.json())
-                    .then(data => {
-                        if (!data.error) {
-                            showTechnicalModal(data);
-                        }
-                    })
+                fetch('/api/technical-entries', { cache: 'no-store' })
+                    .then(r => r.json())
+                    .then(data => showTechnicalModal(data))
                     .catch(error => console.error('Error:', error));
+            });
+            
+            document.getElementById('applyTimeRangeButton').addEventListener('click', function() {
+                const startDate = document.getElementById('startDate').value;
+                const startTime = document.getElementById('startTime').value;
+                const endDate = document.getElementById('endDate').value;
+                const endTime = document.getElementById('endTime').value;
+                
+                if (startDate && endDate) {
+                    const startDateTime = `${startDate}T${startTime || '00:00'}`;
+                    const endDateTime = `${endDate}T${endTime || '23:59'}`;
+                    
+                    if (startDateTime > endDateTime) {
+                        alert('Start time must be before end time');
+                        return;
+                    }
+                }
+                
+                updateMetromap();
+            });
+            
+            document.getElementById('clearTimeRangeButton').addEventListener('click', function() {
+                document.getElementById('startDate').value = '';
+                document.getElementById('startTime').value = '00:00';
+                document.getElementById('endDate').value = '';
+                document.getElementById('endTime').value = '23:59';
+
+                updateMetromap(true);
             });
         });
         
-        setInterval(updateMetromap, 10000);
+        setInterval(() => {
+            const startDate = document.getElementById('startDate')?.value;
+            const endDate = document.getElementById('endDate')?.value;
+            
+            if (!startDate && !endDate) {
+                updateMetromap();
+            }
+        }, 30000);
     </script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; margin: 20px; background-color: #f5f5f5; }
@@ -453,6 +505,67 @@
         
         #technicalButton:hover {
             background-color: #F57C00;
+        }
+        
+        .timerange-container {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        
+        .timerange-container label {
+            font-weight: bold;
+            color: #333;
+            font-size: 14px;
+        }
+        
+        .timerange-container input[type="date"], 
+        .timerange-container input[type="time"] {
+            padding: 6px 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            font-family: inherit;
+            background-color: white;
+        }
+        
+        .timerange-container input[type="date"]:focus,
+        .timerange-container input[type="time"]:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+        
+        .timerange-container button {
+            padding: 8px 16px;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+        }
+        
+        #applyTimeRangeButton {
+            background-color: #4CAF50;
+        }
+        
+        #applyTimeRangeButton:hover {
+            background-color: #388E3C;
+        }
+        
+        #clearTimeRangeButton {
+            background-color: #757575;
+        }
+        
+        #clearTimeRangeButton:hover {
+            background-color: #424242;
         }
         
         #searchResults {
@@ -761,12 +874,27 @@
             <button id="searchButton">Search</button>
             <span class="info-tooltip">
                 ?
-                <span class="tooltip-text">For normal search, type value e.g 8.8.8.8
+                <span class="tooltip-text">For value search, type value e.g 8.8.8.8
                     For timestamp search, add "" e.g. "12-16"
                 For combined search, use 8.8.8.8 "12-16"</span>
             </span>
             <button id="technicalButton">Filtered Entries</button>
             <div id="searchResults"></div>
+        </div>
+        
+        <div class="timerange-container">
+            <label for="startDate">Start Date:</label>
+            <input type="date" id="startDate" placeholder="yyyy-mm-dd">
+            <label for="startTime">Time:</label>
+            <input type="time" id="startTime" value="00:00">
+            
+            <label for="endDate">End Date:</label>
+            <input type="date" id="endDate" placeholder="yyyy-mm-dd">
+            <label for="endTime">Time:</label>
+            <input type="time" id="endTime" value="23:59">
+            
+            <button id="applyTimeRangeButton">Apply Time Range</button>
+            <button id="clearTimeRangeButton">Reset</button>
         </div>
     </div>
     
