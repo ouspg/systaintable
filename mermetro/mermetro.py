@@ -1,9 +1,9 @@
 import json
 import sys
 import argparse
+import os
 from datetime import datetime
 from flask import Flask, render_template, jsonify, send_from_directory, request
-import os
 from multiprocessing import Pool, cpu_count
 
 app = Flask(__name__)
@@ -16,12 +16,13 @@ node_details = {}
 group_merge_log = {}
 excluded_entries = []
 
+
 def parse_timestamp_to_datetime(timestamp_str):
     """
     Muuntaa timestamp-merkkijonon datetime-objektiksi
     Palauttaa datetimen muotoa (2024, 12, 16, 23, 38, 50)
     """
-    if timestamp_str == 'N/A':
+    if not timestamp_str or timestamp_str == 'N/A':
         return None
     
     try:
@@ -111,16 +112,49 @@ def _process_line_chunk(chunk_data):
     local_technical_data = {}
     
     for line_num, entries in chunk_lines:
+        # Käsitellään entry-tasolla sen mukaan onko arvo suodatettu.
         all_line_ids = []
         line_technical_data = []
+
+        def add_identity(entry, entry_type, entry_value):
+            identities = parse_identities(entry)
+            if not identities:
+                return
+            all_line_ids.extend(identities)
+            for node_id in identities:
+                node_key = node_id.split('(')[0]
+                timestamp = entry.get('timestamp', 'N/A')
+
+                if node_key not in local_node_timestamps:
+                    local_node_timestamps[node_key] = []
+                    local_node_counts[node_key] = 0
+                    local_node_entries[node_key] = []
+
+                local_node_timestamps[node_key].append(timestamp)
+                local_node_counts[node_key] += 1
+                local_node_entries[node_key].append({
+                    'timestamp': timestamp,
+                    'line': line_num,
+                    'type': entry_type,
+                    'value': entry_value,
+                })
         
         for entry in entries:
-            entry_type = entry['type']
-            entry_value = entry['value']
+            if not entry or not isinstance(entry, dict):
+                continue
+                
+            entry_type = entry.get('type')
+            entry_value = entry.get('value')
             
-            if (entry_value in common_entries or entry_type in process_technical_types) and \
-               entry_value not in used_excluded_entries and \
-               entry_type not in used_excluded_entries:
+            if not entry_type or not entry_value:
+                continue
+            
+            is_common = bool(common_entries) and entry_value in common_entries
+            is_technical = bool(process_technical_types) and entry_type in process_technical_types
+            is_excluded_value = bool(used_excluded_entries) and entry_value in used_excluded_entries
+            is_excluded_type = bool(used_excluded_entries) and entry_type in used_excluded_entries
+
+            if is_excluded_value or is_excluded_type:
                 tech_entry = {
                     'type': entry_type,
                     'value': entry_value,
@@ -128,28 +162,23 @@ def _process_line_chunk(chunk_data):
                     'line': line_num,
                 }
                 line_technical_data.append(tech_entry)
-                
-            elif entry_type in PERSONAL_TYPES or entry_value in used_excluded_entries or entry_type in used_excluded_entries:
-                identities = parse_identities(entry)
-                all_line_ids.extend(identities)
-                
-                for node_id in identities:
-                    node_key = node_id.split('(')[0]
-                    timestamp = entry.get('timestamp', 'N/A')
-                    
-                    if node_key not in local_node_timestamps:
-                        local_node_timestamps[node_key] = []
-                        local_node_counts[node_key] = 0
-                        local_node_entries[node_key] = []
-                    
-                    local_node_timestamps[node_key].append(timestamp)
-                    local_node_counts[node_key] += 1
-                    local_node_entries[node_key].append({
-                        'timestamp': timestamp,
-                        'line': line_num,
-                        'type': entry['type'],
-                        'value': entry['value'],
-                    })
+                continue
+
+            if is_common or is_technical:
+                add_identity(entry, entry_type, entry_value)
+                continue
+
+            if entry_type in PERSONAL_TYPES:
+                add_identity(entry, entry_type, entry_value)
+                continue
+
+            tech_entry = {
+                'type': entry_type,
+                'value': entry_value,
+                'timestamp': entry.get('timestamp', 'N/A'),
+                'line': line_num,
+            }
+            line_technical_data.append(tech_entry)
         
         # Yhdistä tekniset tiedot
         if all_line_ids and line_technical_data:
@@ -241,15 +270,12 @@ def group_by_person(connections):
                 # Yhdistä kaikki logit
                 combined_logs = a_logs + b_logs + [detailed_log]
                 temp_merge_logs[group_a_idx] = combined_logs
-                
-                # Poista B:n logit koska se ei ole enää itsenäinen ryhmä
+
                 if group_b_idx in temp_merge_logs:
                     del temp_merge_logs[group_b_idx]
                 
-                # Poista B-ryhmä
                 del person_groups[group_b_idx]
                 
-                # Päivitä indeksit temp_merge_logs:issa koska lista lyheni
                 new_temp_logs = {}
                 for idx, logs in temp_merge_logs.items():
                     new_idx = idx if idx < group_b_idx else idx - 1
@@ -306,7 +332,6 @@ def group_by_person(connections):
             a_value = node_details.get(a_key, {}).get('value', a_key)
             b_value = node_details.get(b_key, {}).get('value', b_key)
             
-            # Lyhennä URL:t jos ne on liian pitkiä
             if node_details.get(a_key, {}).get('type') == 'URL' and '?' in a_value:
                 a_value = a_value.split('?')[0]
             if node_details.get(b_key, {}).get('type') == 'URL' and '?' in b_value:
@@ -441,11 +466,15 @@ def generate_metromap_content(all_nodes, connections):
     
     return content
 
-def process_json_file(reload_requested=False, custom_excluded_entries=None, use_multiprocessing=True):
+def process_json_file(reload_requested=False, custom_excluded_entries=None, use_multiprocessing=True, start_time=None, end_time=None):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
     global current_metromap, node_details, excluded_entries
     
-    used_excluded_entries = custom_excluded_entries if reload_requested else excluded_entries
+    used_excluded_entries = custom_excluded_entries if (reload_requested and custom_excluded_entries is not None) else excluded_entries
+    used_excluded_entries = set(used_excluded_entries)
+    if start_time or end_time:
+        print(f"[process] time filter active start={start_time} end={end_time}")
+    print(f"[process] excluded entries active: {len(used_excluded_entries)}")
     
     all_nodes = set()
     connections_set = set()
@@ -453,6 +482,18 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
     node_counts = {}
     node_entries = {}
     technical_data = {}
+
+    def _entry_in_time(e):
+        if not (start_time or end_time):
+            return True
+        entry_timestamp = parse_timestamp_to_datetime(e.get('timestamp', 'N/A'))
+        if not entry_timestamp:
+            return False
+        if start_time and entry_timestamp < start_time:
+            return False
+        if end_time and entry_timestamp > end_time:
+            return False
+        return True
     
     try:
         with open(lokitiedosto, "r", encoding="utf-8") as f:
@@ -466,29 +507,44 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             with open(common_values_path, "r", encoding="utf-8") as f:
                 common_entries = set(f.read().splitlines())
                 
-            if used_excluded_entries:
-                common_entries = common_entries - set(used_excluded_entries)
         except FileNotFoundError:
             common_entries = set()
         
         lines = {}
+        total_entries = len(data)
+        filtered_entries_count = 0
+        
         for entry in data:
             if 'line' in entry:
-                line_num = entry['line']
-                if line_num not in lines:
-                    lines[line_num] = []
-                lines[line_num].append(entry)
+                include_entry = True
+                if start_time or end_time:
+                    include_entry = _entry_in_time(entry)
+                
+                if include_entry:
+                    filtered_entries_count += 1
+                    line_num = entry['line']
+                    if line_num not in lines:
+                        lines[line_num] = []
+                    lines[line_num].append(entry)
 
+        if start_time or end_time:
+            print(f"Time filtering: {total_entries} total entries -> {filtered_entries_count} entries match time range")
+            print(f"Time range: {start_time} to {end_time}")
+            
         print(f"Processing {len(lines)} lines...")
         if len(lines) == 0:
-            print("File is empty.")
-            sys.exit()
+            if start_time or end_time:
+                print("No entries found in the specified time range.")
+                current_metromap = "flowchart RL\n\n    EmptyResult[No data in time range]"
+                return
+            else:
+                print("File is empty.")
+                sys.exit()
 
         line_items = list(lines.items())
         if use_multiprocessing:
             print(f"Using multiprocessing with {cpu_count()} cores. This may take a while...")
             chunk_size = max(1, len(line_items) // cpu_count())
-
             process_technical_types = TECHNICAL_TYPES.copy()
             if used_excluded_entries:
                 process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
@@ -534,7 +590,7 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
         connections = list(connections_set)
         
         updated_nodes = set()
-        node_details = {}
+        local_node_details = {}
         
         for node in all_nodes:
             node_key = node.split('(')[0]
@@ -554,7 +610,7 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
                 first_time = timestamps[0] if timestamps else 'N/A'
                 last_time = timestamps[-1] if timestamps else 'N/A'
                 
-                node_details[node_key] = {
+                local_node_details[node_key] = {
                     'type': entries[0]['type'] if entries else 'Unknown',
                     'value': entries[0]['value'] if entries else 'Unknown',
                     'count': count,
@@ -569,7 +625,7 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
                 else:
                     info = f"<br/>First: {first_time}<br/>Last: {last_time}<br/>Count: {count}"
             else:
-                node_details[node_key] = {
+                local_node_details[node_key] = {
                     'type': entries[0]['type'] if entries else 'Unknown',
                     'value': entries[0]['value'] if entries else 'Unknown',
                     'count': count,
@@ -614,11 +670,11 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             
             for node in group:
                 node_key = node.split('(')[0]
-                if node_key in node_details:
-                    all_entries.extend(node_details[node_key]['entries'])
-                    all_technical_entries.extend(node_details[node_key]['technical_entries'])
+                if node_key in local_node_details:
+                    all_entries.extend(local_node_details[node_key]['entries'])
+                    all_technical_entries.extend(local_node_details[node_key]['technical_entries'])
                     
-                    for entry in node_details[node_key]['entries']:
+                    for entry in local_node_details[node_key]['entries']:
                         dt = parse_timestamp_to_datetime(entry['timestamp'])
                         if dt:
                             all_timestamps.append(dt)
@@ -634,7 +690,7 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
                 first_time = 'N/A'
                 last_time = 'N/A'
             
-            node_details[group_id] = {
+            local_node_details[group_id] = {
                 'type': 'Group',
                 'value': f"{len(group)} entries",
                 'count': len(all_entries) + len(all_technical_entries),
@@ -645,6 +701,9 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
                 'group_nodes': list(group),
                 'merge_log': group_merge_log.get(group_id, [])
             }
+        
+        node_details.clear()
+        node_details.update(local_node_details)
         
         current_metromap = generate_metromap_content(updated_nodes, updated_connections)
         print(f"Metromap updated: {datetime.now().strftime('%H:%M:%S')}")
@@ -662,6 +721,42 @@ def index():
 @app.route('/api/metromap')
 def api_metromap():
     """API metrokartan hakuun"""
+    global current_metromap, node_details
+    reset = request.args.get('reset')
+    start_time_str = request.args.get('start')
+    end_time_str = request.args.get('end')
+
+    if reset == '1':
+        process_json_file(reload_requested=False, use_multiprocessing=False, start_time=None, end_time=None)
+        return jsonify({
+            'metromap': current_metromap,
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        })
+
+    if not start_time_str and not end_time_str:
+        return jsonify({'metromap': current_metromap, 'timestamp': datetime.now().strftime('%H:%M:%S')})
+
+    def _parse_query_dt(raw, label):
+        try:
+            if 'T' in raw:
+                return datetime.strptime(raw, '%Y-%m-%dT%H:%M')
+            else:
+                return datetime.strptime(raw, '%Y-%m-%d')
+        except ValueError:
+            print(f"Invalid {label} time format: {raw}")
+            return None
+
+    start_dt = _parse_query_dt(start_time_str, 'start') if start_time_str else None
+    end_dt = _parse_query_dt(end_time_str, 'end') if end_time_str else None
+
+    if start_dt or end_dt:
+        print(f"Time filtering: start={start_dt}, end={end_dt}")
+        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=False)
+        filtered_result = {
+            'metromap': current_metromap,
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        }
+        return jsonify(filtered_result)
     return jsonify({'metromap': current_metromap, 'timestamp': datetime.now().strftime('%H:%M:%S')})
 
 @app.route('/api/node-details/<node_id>')
@@ -669,23 +764,19 @@ def api_node_details(node_id):
     """API entryn tietojen hakemiseen"""
     if node_id in node_details:
         return jsonify(node_details[node_id])
-    
     clean_node_id = node_id
     if '-' in node_id:
         parts = node_id.split('-')
         if parts[-1].isdigit():
             clean_node_id = '-'.join(parts[:-1])
-    
     if clean_node_id in node_details:
         return jsonify(node_details[clean_node_id])
-    
     for key in node_details.keys():
         if (key.replace('_', '-') == clean_node_id or 
             key.replace('-', '_') == clean_node_id or 
             clean_node_id.replace('_', '-') == key or 
             clean_node_id.replace('-', '_') == key):
             return jsonify(node_details[key])
-    
     return jsonify({'error': 'Node not found'}), 404
 
 @app.route('/api/search/<search_term>')
@@ -809,6 +900,8 @@ def api_search(search_term):
     
     return jsonify({'results': unique_results})
 
+
+
 @app.route('/favicon.ico')
 def favicon():
     """Pikku ikoni välilehdessä"""
@@ -855,17 +948,17 @@ def reload_metromap():
     """Reload the metromap with custom exclusion settings"""
     global excluded_entries
     try:
-        data = request.json
+        data = request.get_json(silent=True) or {}
         custom_excluded_entries = data.get('excludedEntries', [])
         
         excluded_entries = custom_excluded_entries
         
-        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries)
+        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries, use_multiprocessing=False)
         
         return jsonify({'success': True})
     except Exception as e:
         print(f"Reload error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 def create_html_file(metromap_content):
     """Luo staattinen HTML-tiedosto"""
@@ -908,6 +1001,16 @@ def main():
 
     global lokitiedosto
     lokitiedosto = args.jsonfile
+
+    global excluded_entries
+    try:
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
+        with open(common_values_path, "r", encoding="utf-8") as f:
+            excluded_entries = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    except Exception:
+        excluded_entries = []
 
     print("\nStarting up...")
     print(f"Time: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")

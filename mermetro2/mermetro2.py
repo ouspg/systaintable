@@ -2,9 +2,12 @@ import argparse
 import json
 import sys
 from datetime import datetime
-from flask import Flask, render_template, jsonify, send_from_directory
+from flask import Flask, render_template, jsonify, send_from_directory, request
 import os
 from multiprocessing import Pool, cpu_count
+
+import formation
+import nodes
 
 app = Flask(__name__)
 
@@ -16,7 +19,8 @@ node_details = {}
 group_merge_log = {}
 selected_group_id = None
 available_groups = {}
-    
+excluded_entries = []
+
 def parse_timestamp_to_datetime(timestamp_str):
     """Muuntaa timestamp-merkkijonon datetime-objektiksi"""
     if timestamp_str == 'N/A':
@@ -79,7 +83,23 @@ def parse_identities(entry):
 
 def _process_line_chunk(chunk_data):
     """Prosessoi yhden riviryhmän rinnakkain"""
-    chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
+    if len(chunk_data) == 5:
+        chunk_lines, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries = chunk_data
+    else:
+        chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
+        process_technical_types = TECHNICAL_TYPES
+        used_excluded_entries = []
+        
+        try:
+            common_values_path = os.path.join('data', 'common_values.txt')
+            if not os.path.exists(common_values_path):
+                common_values_path = 'common_values.txt'
+                
+            with open(common_values_path, "r", encoding="utf-8") as f:
+                common_entries = set(f.read().splitlines())
+        except FileNotFoundError:
+            common_entries = set()
+    
     local_connections = set()
     local_nodes = set()
     local_node_timestamps = {}
@@ -87,21 +107,49 @@ def _process_line_chunk(chunk_data):
     local_node_entries = {}
     local_technical_data = {}
 
-    try:
-        with open("data/common_values.txt", "r", encoding="utf-8") as f:
-            common_entries = set(f.read().splitlines())
-    except FileNotFoundError:
-        common_entries = set()
-
     for line_num, entries in chunk_lines:
         all_line_ids = []
         line_technical_data = []
         
+        def add_identity(entry, entry_type, entry_value):
+            identities = parse_identities(entry)
+            if not identities:
+                return
+            all_line_ids.extend(identities)
+            for node_id in identities:
+                node_key = node_id.split('(')[0]
+                timestamp = entry.get('timestamp', 'N/A')
+
+                if node_key not in local_node_timestamps:
+                    local_node_timestamps[node_key] = []
+                    local_node_counts[node_key] = 0
+                    local_node_entries[node_key] = []
+
+                local_node_timestamps[node_key].append(timestamp)
+                local_node_counts[node_key] += 1
+                local_node_entries[node_key].append({
+                    'timestamp': timestamp,
+                    'line': line_num,
+                    'type': entry_type,
+                    'value': entry_value,
+                })
+        
         for entry in entries:
-            entry_type = entry['type']
-            entry_value = entry['value']
+            if not entry or not isinstance(entry, dict):
+                continue
             
-            if entry_value in common_entries or entry_type in TECHNICAL_TYPES:
+            entry_type = entry.get('type')
+            entry_value = entry.get('value')
+            
+            if not entry_type or not entry_value:
+                continue
+            
+            is_common = bool(common_entries) and entry_value in common_entries
+            is_technical = bool(process_technical_types) and entry_type in process_technical_types
+            is_excluded_value = bool(used_excluded_entries) and entry_value in used_excluded_entries
+            is_excluded_type = bool(used_excluded_entries) and entry_type in used_excluded_entries
+
+            if is_excluded_value or is_excluded_type:
                 tech_entry = {
                     'type': entry_type,
                     'value': entry_value,
@@ -109,28 +157,25 @@ def _process_line_chunk(chunk_data):
                     'line': line_num,
                 }
                 line_technical_data.append(tech_entry)
-            elif entry_type in PERSONAL_TYPES:
-                identities = parse_identities(entry)
-                all_line_ids.extend(identities)
-                
-                for node_id in identities:
-                    node_key = node_id.split('(')[0]
-                    timestamp = entry.get('timestamp', 'N/A')
-                    
-                    if node_key not in local_node_timestamps:
-                        local_node_timestamps[node_key] = []
-                        local_node_counts[node_key] = 0
-                        local_node_entries[node_key] = []
-                    
-                    local_node_timestamps[node_key].append(timestamp)
-                    local_node_counts[node_key] += 1
-                    local_node_entries[node_key].append({
-                        'timestamp': timestamp,
-                        'line': line_num,
-                        'type': entry['type'],
-                        'value': entry['value'],
-                    })
+                continue
+
+            if is_common or is_technical:
+                add_identity(entry, entry_type, entry_value)
+                continue
+
+            if entry_type in PERSONAL_TYPES:
+                add_identity(entry, entry_type, entry_value)
+                continue
+
+            tech_entry = {
+                'type': entry_type,
+                'value': entry_value,
+                'timestamp': entry.get('timestamp', 'N/A'),
+                'line': line_num,
+            }
+            line_technical_data.append(tech_entry)
         
+        # Yhdistä tekniset tiedot
         if all_line_ids and line_technical_data:
             for node_id in all_line_ids:
                 node_key = node_id.split('(')[0]
@@ -138,6 +183,7 @@ def _process_line_chunk(chunk_data):
                     local_technical_data[node_key] = []
                 local_technical_data[node_key].extend(line_technical_data)
         
+        # Tärkeä connections
         if all_line_ids:
             local_nodes.update(all_line_ids)
             for i in range(len(all_line_ids)):
@@ -146,372 +192,15 @@ def _process_line_chunk(chunk_data):
     
     return local_connections, local_nodes, local_node_timestamps, local_node_counts, local_node_entries, local_technical_data
 
-def get_node_value(node_key):
-    """Hakee noden arvon node_details:sta"""
-    if node_key in node_details:
-        member_value = node_details[node_key].get('value', node_key)
-        if node_details[node_key].get('type') == 'URL' and '?' in member_value:
-            return member_value.split('?')[0]
-        return member_value
-    return node_key
-
-def group_by_person(connections):
-    """Luodaan henkilöryhmiä yhteyksien perusteella"""
-    global group_merge_log
-    temp_merge_logs = {}
-    person_groups = []
-
-    for a, b in connections:
-        groups_with_a = [i for i, group in enumerate(person_groups) if a in group]
-        groups_with_b = [i for i, group in enumerate(person_groups) if b in group]
-
-        if groups_with_a and groups_with_b:
-            if groups_with_a[0] == groups_with_b[0]:
-                continue
-            else:
-                # Yhdistetään ryhmät
-                group_a_idx = groups_with_a[0]
-                group_b_idx = groups_with_b[0]
-                group_a = person_groups[group_a_idx]
-                group_b = person_groups[group_b_idx]
-                
-                group_a_members = [get_node_value(member.split('(')[0]) for member in group_a]
-                group_b_members = [get_node_value(member.split('(')[0]) for member in group_b]
-                
-                group_a.update(group_b)
-                
-                a_logs = temp_merge_logs.get(group_a_idx, [])
-                b_logs = temp_merge_logs.get(group_b_idx, [])
-                
-                a_value = get_node_value(a.split('(')[0])
-                b_value = get_node_value(b.split('(')[0])
-                
-                group_a_str = ", ".join(group_a_members)
-                group_b_str = ", ".join(group_b_members)
-                detailed_log = f"MERGED: Group A [{group_a_str}]\n + \nGroup B [{group_b_str}] \nbecause of Tuple ({a_value} , {b_value})"
-
-                combined_logs = a_logs + b_logs + [detailed_log]
-                temp_merge_logs[group_a_idx] = combined_logs
-
-                if group_b_idx in temp_merge_logs:
-                    del temp_merge_logs[group_b_idx]
-
-                del person_groups[group_b_idx]
-
-                new_temp_logs = {}
-                for idx, logs in temp_merge_logs.items():
-                    new_idx = idx if idx < group_b_idx else idx - 1
-                    new_temp_logs[new_idx] = logs
-                temp_merge_logs = new_temp_logs
-                    
-        elif groups_with_a:
-            # Lisää b ryhmään A
-            idx = groups_with_a[0]
-            person_groups[idx].add(b)
-            
-            if idx not in temp_merge_logs:
-                temp_merge_logs[idx] = []
-                
-            a_value = get_node_value(a.split('(')[0])
-            b_value = get_node_value(b.split('(')[0])
-            temp_merge_logs[idx].append(f"ADDED: ({a_value} , {b_value}) -> added to group")
-            
-        elif groups_with_b:
-            # Lisää a ryhmään B
-            idx = groups_with_b[0]
-            person_groups[idx].add(a)
-            
-            if idx not in temp_merge_logs:
-                temp_merge_logs[idx] = []
-                
-            a_value = get_node_value(a.split('(')[0])
-            b_value = get_node_value(b.split('(')[0])
-            temp_merge_logs[idx].append(f"ADDED: ({a_value} , {b_value}) -> added to group")
-            
-        else:
-            # Luo uusi ryhmä
-            person_groups.append({a, b})
-            current_idx = len(person_groups) - 1
-            
-            a_value = get_node_value(a.split('(')[0])
-            b_value = get_node_value(b.split('(')[0])
-            temp_merge_logs[current_idx] = [f"FORMED: ({a_value} , {b_value}) = new group"]
-
-    group_merge_log = {}
-    for i, group in enumerate(person_groups):
-        final_group_id = f"ID_{i + 1}"
-        group_merge_log[final_group_id] = temp_merge_logs.get(i, [])
-
-    return person_groups
-
-def create_formed_from_data(group_id, val1, val2):
-    group_entries = node_details[group_id].get('entries', []) if group_id in node_details else []
-    
-    line_to_values = {}
-    line_to_entries = {}
-    for entry in group_entries:
-        line = entry.get('line', None)
-        if line is not None:
-            line_to_values.setdefault(line, set()).add(entry.get('value'))
-            line_to_entries.setdefault(line, []).append(entry)
-    
-    # Etsi rivi jolla molemmat val1 ja val2 esiintyvät
-    found_line = None
-    for line, valueset in line_to_values.items():
-        if val1 in valueset and val2 in valueset:
-            found_line = line
-            break
-    
-    formed_from = []
-    if found_line is not None:
-        # Hae molempien tiedot samalta riviltä
-        for v in (val1, val2):
-            entry = next((e for e in line_to_entries[found_line] if e.get('value') == v), None)
-            if entry:
-                formed_from.append({
-                    'value': v,
-                    'line': found_line,
-                    'timestamp': entry.get('timestamp', 'N/A'),
-                    'type': entry.get('type', 'Unknown'),
-                    'tuple_line': found_line
-                })
-            else:
-                formed_from.append({
-                    'value': v,
-                    'line': found_line,
-                    'timestamp': 'N/A',
-                    'type': 'Unknown',
-                    'tuple_line': found_line
-                })
-    else:
-        for val in (val1, val2):
-            entries = [e for e in group_entries if e.get('value') == val]
-            if entries:
-                entry = entries[0]
-                formed_from.append({
-                    'value': val,
-                    'line': entry.get('line', 'N/A'),
-                    'timestamp': entry.get('timestamp', 'N/A'),
-                    'type': entry.get('type', '')
-                })
-            else:
-                formed_from.append({
-                    'value': val,
-                    'line': 'N/A',
-                    'timestamp': 'N/A',
-                    'type': ''
-                })
-    
-    return formed_from
-
-def generate_timeline_content(group_id):
-    if group_id not in node_details:
-        return "flowchart TD\n    ERROR[Group not found]"
-    
-    group_data = node_details[group_id]
-    merge_logs = group_data.get('merge_log', [])
-    
-    if not merge_logs:
-        return "flowchart TD\n    ERROR[No formation history available]"
-    
-    content = "flowchart TD\n"
-    group_counter = 0
-    node_definitions = []
-    connections = []
-    group_nodes = []
-    group_id_map = {}
-
-    colors = [
-        ("#4CAF50", "#2E7D32"), ("#2196F3", "#1565C0"), ("#9C27B0", "#6A1B9A"),
-        ("#FF9800", "#E65100"), ("#F44336", "#C62828"), ("#795548", "#3E2723"),
-        ("#607D8B", "#263238"), ("#E91E63", "#AD1457")
-    ]
-    
-    color_assignments = {}
-    next_color_index = 0
-    parent_groups = {}
-
-    for log_entry in merge_logs:
-        if "FORMED:" in log_entry:
-            group_counter += 1
-            start_idx = log_entry.find("(") + 1
-            end_idx = log_entry.find(")")
-            tuple_content = log_entry[start_idx:end_idx]
-            values = [v.strip() for v in tuple_content.split(",")]
-            
-            if len(values) >= 2:
-                val1, val2 = values[0], values[1]
-                members = frozenset([val1, val2])
-                group_node_id = f"G{group_counter}_FORMED"
-                group_label = f"{val1}<br>{val2}"
-                node_definitions.append(f"    {group_node_id}(\"{group_label}\"):::node")
-                group_nodes.append((members, group_node_id))
-                group_id_map[members] = group_node_id
-
-                color_assignments[group_node_id] = next_color_index
-                next_color_index = (next_color_index + 1) % len(colors)
-
-                formed_from = create_formed_from_data(group_id, val1, val2)
-                
-                node_details[group_node_id] = {
-                    'type': 'GroupFormed',
-                    'value': f"FORMED: ({val1}, {val2})",
-                    'formed_from': formed_from,
-                    'merge_log': [log_entry]
-                }
-                
-        elif "ADDED:" in log_entry:
-            group_counter += 1
-            start_idx = log_entry.find("(") + 1
-            end_idx = log_entry.find(")")
-            tuple_content = log_entry[start_idx:end_idx]
-            values = [v.strip() for v in tuple_content.split(",")]
-            
-            if len(values) >= 2:
-                val1, val2 = values[0], values[1]
-                prev_members = None
-                prev_node_id = None
-                
-                for members, node_id in reversed(group_nodes):
-                    if val1 in members or val2 in members:
-                        prev_members = members
-                        prev_node_id = node_id
-                        break
-                
-                new_members = frozenset(set(prev_members) | {val1, val2})
-                group_node_id = f"G{group_counter}_ADDED"
-                group_label = "<br>".join(sorted(new_members))
-                node_definitions.append(f"    {group_node_id}(\"{group_label}\"):::node")
-                group_nodes.append((new_members, group_node_id))
-                group_id_map[new_members] = group_node_id
-                
-                parent_groups[group_node_id] = prev_node_id
-                
-                color_assignments[group_node_id] = color_assignments.get(prev_node_id, next_color_index)
-                if prev_node_id not in color_assignments:
-                    next_color_index = (next_color_index + 1) % len(colors)
-                
-                connections.append(f"    {prev_node_id} -- \"{val1}<br>{val2}\" --> {group_node_id}")
-
-                formed_from = create_formed_from_data(group_id, val1, val2)
-                current_entries = [e for e in node_details[group_id].get('entries', []) if e.get('value') in new_members]
-                
-                node_details[group_node_id] = {
-                    'type': 'GroupAdded',
-                    'value': f"ADDED: ({val1}, {val2})",
-                    'formed_from': formed_from,
-                    'merge_log': [log_entry],
-                    'entries': current_entries
-                }
-
-        elif "MERGED:" in log_entry:
-            group_counter += 1
-            group_a_start = log_entry.find("Group A [") + 9
-            group_a_end = log_entry.find("]", group_a_start)
-            group_a_content = log_entry[group_a_start:group_a_end]
-            group_b_start = log_entry.find("Group B [") + 9
-            group_b_end = log_entry.find("]", group_b_start)
-            group_b_content = log_entry[group_b_start:group_b_end]
-            tuple_start = log_entry.find("because of Tuple (") + 18
-            tuple_end = log_entry.find(")", tuple_start)
-            connecting_tuple = log_entry[tuple_start:tuple_end] if tuple_start > 17 and tuple_end > tuple_start else "Unknown"
-            connecting_tuple = "<br>".join([v.strip() for v in connecting_tuple.split(",")])
-            
-            group_a_members = frozenset([m.strip() for m in group_a_content.split(",") if m.strip()])
-            group_b_members = frozenset([m.strip() for m in group_b_content.split(",") if m.strip()])
-            merged_members = frozenset(set(group_a_members) | set(group_b_members))
-            group_node_id = f"G{group_counter}_MERGED"
-            group_label = "<br>".join(sorted(merged_members))
-            node_definitions.append(f"    {group_node_id}(\"{group_label}\"):::node")
-            group_nodes.append((merged_members, group_node_id))
-            group_id_map[merged_members] = group_node_id
-            
-            node_a = group_id_map.get(group_a_members)
-            node_b = group_id_map.get(group_b_members)
-            
-            color_assignments[group_node_id] = next_color_index
-            next_color_index = (next_color_index + 1) % len(colors)
-            
-            if node_a:
-                connections.append(f"    {node_a} -- \"{connecting_tuple}\" --> {group_node_id}")
-                parent_groups[group_node_id] = node_a
-            if node_b:
-                connections.append(f"    {node_b} -- \"{connecting_tuple}\" --> {group_node_id}")
-            
-            group_entries = node_details[group_id].get('entries', []) if group_id in node_details else []
-            
-            # Luo uniikit entryt ryhmille
-            def get_unique_entries(members):
-                unique_entries = []
-                seen_values = set()
-                for e in group_entries:
-                    if e.get('value') in members and e.get('value') not in seen_values:
-                        unique_entries.append(e)
-                        seen_values.add(e.get('value'))
-                return unique_entries
-            
-            unique_group_a_entries = get_unique_entries(group_a_members)
-            unique_group_b_entries = get_unique_entries(group_b_members)
-            merged_entries = [e for e in group_entries if e.get('value') in merged_members]
-
-            # Merging tuple details
-            merging_tuple = []
-            original_tuple_values = [v.strip() for v in log_entry[tuple_start:tuple_end].split(",") if v.strip()]
-            
-            for v in original_tuple_values:
-                entry = next((e for e in group_entries if e.get('value') == v.strip()), None)
-                if entry:
-                    merging_tuple.append({
-                        'value': entry.get('value'),
-                        'line': entry.get('line', ''),
-                        'timestamp': entry.get('timestamp', ''),
-                        'type': entry.get('type', '')
-                    })
-                else:
-                    merging_tuple.append({
-                        'value': v.strip(),
-                        'line': '',
-                        'timestamp': '',
-                        'type': ''
-                    })
-                    
-            node_details[group_node_id] = {
-                'type': 'GroupMerged',
-                'value': f"MERGED: ({', '.join(sorted(merged_members))})",
-                'merged_groups': [
-                    {'entries': unique_group_a_entries},
-                    {'entries': unique_group_b_entries}
-                ],
-                'entries': merged_entries,
-                'merge_log': [log_entry],
-                'merging_tuple': merging_tuple
-            }
-
-    content += "\n".join(node_definitions)
-    content += "\n\n"
-    content += "\n".join(connections)
-    content += "\n\n"
-    
-    for idx, (members, node_id) in enumerate(group_nodes):
-        color_index = color_assignments.get(node_id, idx % len(colors))
-        fill_color, stroke_color = colors[color_index]
-        content += f"    style {node_id} fill:{fill_color},stroke:{stroke_color},color:#fff,stroke-width:3px\n"
-
-    for idx, conn in enumerate(connections):
-        parts = conn.strip().split(" -- ")
-        if len(parts) == 2:
-            source_node = parts[0].strip()
-            if source_node in color_assignments:
-                color_index = color_assignments[source_node]
-                fill_color, stroke_color = colors[color_index]
-                content += f"    linkStyle {idx} stroke:{fill_color},stroke-width:4px\n"
-
-    content += "    classDef group fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px;\n"
-    return content
-
-def process_json_file(use_multiprocessing=True):
+def process_json_file(reload_requested=False, custom_excluded_entries=None, use_multiprocessing=True, start_time=None, end_time=None):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
-    global current_timeline, node_details, available_groups
+    global current_timeline, node_details, available_groups, excluded_entries, group_merge_log
+    
+    used_excluded_entries = custom_excluded_entries if (reload_requested and custom_excluded_entries is not None) else excluded_entries
+    used_excluded_entries = set(used_excluded_entries)
+    if start_time or end_time:
+        print(f"[process] time filter active start={start_time} end={end_time}")
+    print(f"[process] excluded entries active: {len(used_excluded_entries)}")
     
     all_nodes = set()
     connections_set = set()
@@ -519,36 +208,91 @@ def process_json_file(use_multiprocessing=True):
     node_counts = {}
     node_entries = {}
     technical_data = {}
+
+    def _entry_in_time(e):
+        if not (start_time or end_time):
+            return True
+        entry_timestamp = parse_timestamp_to_datetime(e.get('timestamp', 'N/A'))
+        if not entry_timestamp:
+            return False
+        if start_time and entry_timestamp < start_time:
+            return False
+        if end_time and entry_timestamp > end_time:
+            return False
+        return True
     
     try:
         with open(lokitiedosto, "r", encoding="utf-8") as f:
             data = json.load(f)
         
+        try:
+            common_values_path = os.path.join('data', 'common_values.txt')
+            if not os.path.exists(common_values_path):
+                common_values_path = 'common_values.txt'
+                
+            with open(common_values_path, "r", encoding="utf-8") as f:
+                common_entries = set(f.read().splitlines())
+                
+        except FileNotFoundError:
+            common_entries = set()
+        
         # Ryhmitellään entryt riveittäin
         lines = {}
+        total_entries = len(data)
+        filtered_entries_count = 0
+        
         for entry in data:
             if 'line' in entry:
-                line_num = entry['line']
-                lines.setdefault(line_num, []).append(entry)
+                include_entry = True
+                if start_time or end_time:
+                    include_entry = _entry_in_time(entry)
+                
+                if include_entry:
+                    filtered_entries_count += 1
+                    line_num = entry['line']
+                    if line_num not in lines:
+                        lines[line_num] = []
+                    lines[line_num].append(entry)
 
+        if start_time or end_time:
+            print(f"Time filtering: {total_entries} total entries -> {filtered_entries_count} entries match time range")
+            print(f"Time range: {start_time} to {end_time}")
+            
         print(f"Processing {len(lines)} lines...")
         if len(lines) == 0:
-            print("File is empty!")
-            sys.exit()
+            if start_time or end_time:
+                print("No entries found in the specified time range.")
+                current_timeline = "flowchart RL\n\n    EmptyResult[No data in time range]"
+                return
+            else:
+                print("File is empty.")
+                sys.exit()
 
         line_items = list(lines.items())
         if use_multiprocessing:
             print(f"Using multiprocessing with {cpu_count()} cores. This may take a while...")
             chunk_size = max(1, len(line_items) // cpu_count())
-            chunks = [(line_items[i:i + chunk_size], PERSONAL_TYPES, TECHNICAL_TYPES) 
-                     for i in range(0, len(line_items), chunk_size)]
-            
+
+            process_technical_types = TECHNICAL_TYPES.copy()
+            if used_excluded_entries:
+                process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
+
+            chunks = []
+            for i in range(0, len(line_items), chunk_size):
+                chunk = line_items[i:i + chunk_size]
+                chunks.append((chunk, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries))
             with Pool(processes=cpu_count()) as pool:
                 results = pool.map(_process_line_chunk, chunks)
         else:
             print("Processing without multiprocessing...")
-            results = [_process_line_chunk((line_items, PERSONAL_TYPES, TECHNICAL_TYPES))]
-
+            process_technical_types = TECHNICAL_TYPES.copy()
+            if used_excluded_entries:
+                process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
+            chunks = [(line_items, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries)]
+            results = []
+            for chunk in chunks:
+                results.append(_process_line_chunk(chunk))
+        
         # Yhdistä tulokset
         for chunk_connections, chunk_nodes, chunk_timestamps, chunk_counts, chunk_entries, chunk_technical in results:
             connections_set.update(chunk_connections)
@@ -581,8 +325,8 @@ def process_json_file(use_multiprocessing=True):
             
             if valid_timestamps:
                 valid_timestamps.sort()
-                first_time = valid_timestamps[0].strftime('%d.%m at %H:%M:%S')
-                last_time = valid_timestamps[-1].strftime('%d.%m at %H:%M:%S')
+                first_time = timestamps[0] if timestamps else 'N/A'
+                last_time = timestamps[-1] if timestamps else 'N/A'
             else:
                 first_time = last_time = 'N/A'
                 
@@ -597,7 +341,7 @@ def process_json_file(use_multiprocessing=True):
             }
         
         # Luodaan ryhmätiedot
-        person_groups = group_by_person(list(connections_set))
+        person_groups, group_merge_log = formation.group_by_person(list(connections_set), node_details)
         available_groups = {}
         
         for group_num, group in enumerate(person_groups):
@@ -624,8 +368,8 @@ def process_json_file(use_multiprocessing=True):
             
             if all_timestamps:
                 all_timestamps.sort()
-                first_time = all_timestamps[0].strftime('%d.%m.at %H:%M:%S')
-                last_time = all_timestamps[-1].strftime('%d.%m.at %H:%M:%S')
+                first_time = all_entries[0]['timestamp'] if all_entries else 'N/A'
+                last_time = all_entries[-1]['timestamp'] if all_entries else 'N/A'
             else:
                 first_time = last_time = 'N/A'
             
@@ -641,15 +385,23 @@ def process_json_file(use_multiprocessing=True):
                 'merge_log': group_merge_log.get(group_id, [])
             }
             
+            unique_nodes = set()
+            for node in group:
+                node_key = node.split('(')[0]
+                if node_key in node_details:
+                    value = node_details[node_key]['value']
+                    node_type = node_details[node_key]['type']
+                    unique_nodes.add((value, node_type))
+            
             available_groups[group_id] = {
                 'count': len(all_entries) + len(all_technical_entries),
-                'nodes': len(group),
+                'nodes': len(unique_nodes),
                 'first_seen': first_time,
                 'last_seen': last_time
             }
         
         if selected_group_id:
-            current_timeline = generate_timeline_content(selected_group_id)
+            current_timeline = formation.generate_timeline_content(selected_group_id, node_details)
             print(f"Timeline updated for {selected_group_id}: {datetime.now().strftime('%H:%M:%S')}")
         
     except Exception as e:
@@ -673,6 +425,47 @@ def api_timeline():
         'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
+@app.route('/api/metromap')
+def api_metromap():
+    """API metrokartan hakuun (timestamp filtering)"""
+    global current_timeline, node_details
+    reset = request.args.get('reset')
+    start_time_str = request.args.get('start')
+    end_time_str = request.args.get('end')
+
+    if reset == '1':
+        process_json_file(reload_requested=False, use_multiprocessing=False, start_time=None, end_time=None)
+        return jsonify({
+            'metromap': current_timeline,
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        })
+
+    if not start_time_str and not end_time_str:
+        return jsonify({'metromap': current_timeline, 'timestamp': datetime.now().strftime('%H:%M:%S')})
+
+    def _parse_query_dt(raw, label):
+        try:
+            if 'T' in raw:
+                return datetime.strptime(raw, '%Y-%m-%dT%H:%M')
+            else:
+                return datetime.strptime(raw, '%Y-%m-%d')
+        except ValueError:
+            print(f"Invalid {label} time format: {raw}")
+            return None
+
+    start_dt = _parse_query_dt(start_time_str, 'start') if start_time_str else None
+    end_dt = _parse_query_dt(end_time_str, 'end') if end_time_str else None
+
+    if start_dt or end_dt:
+        print(f"Time filtering: start={start_dt}, end={end_dt}")
+        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=False)
+        filtered_result = {
+            'metromap': current_timeline,
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        }
+        return jsonify(filtered_result)
+    return jsonify({'metromap': current_timeline, 'timestamp': datetime.now().strftime('%H:%M:%S')})
+
 @app.route('/api/groups')
 def api_groups():
     """API ryhmien hakuun"""
@@ -685,7 +478,7 @@ def api_select_group(group_id):
     
     if group_id in available_groups:
         selected_group_id = group_id
-        current_timeline = generate_timeline_content(group_id)
+        current_timeline = formation.generate_timeline_content(group_id, node_details)
         return jsonify({
             'success': True, 
             'selected_group': selected_group_id,
@@ -721,22 +514,81 @@ def api_visualization(viz_type, group_id):
         return jsonify({'error': 'Group not found'}), 404
     
     if viz_type == 'formation':
-        timeline = generate_timeline_content(group_id)
+        timeline = formation.generate_timeline_content(group_id, node_details)
         return jsonify({
             'success': True,
             'visualization': timeline,
             'type': 'formation',
             'group_id': group_id
         })
-    elif viz_type in ['nodes', 'timeline']:
-        viz_names = {'nodes': 'Node relationship', 'timeline': 'Chronological timeline'}
+    elif viz_type == 'nodes':
+        nodes_diagram = nodes.generate_nodes_content(group_id, node_details)
+        return jsonify({
+            'success': True,
+            'visualization': nodes_diagram,
+            'type': 'nodes',
+            'group_id': group_id
+        })
+    elif viz_type == 'timeline':
         return jsonify({
             'success': False,
-            'error': f'{viz_names[viz_type]} visualization not yet made',
+            'error': 'Chronological timeline visualization not yet made',
             'type': viz_type
         })
     else:
         return jsonify({'error': 'Unknown visualization type'}), 400
+
+@app.route('/api/technical-entries')
+def api_technical_entries():
+    """API teknisten ja yleisten entryjen hakuun"""
+    global excluded_entries
+    technical_values = set()
+    
+    try:
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
+            
+        with open(common_values_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    technical_values.add(line)
+    except FileNotFoundError:
+        pass
+    
+    for node_id, details in node_details.items():
+        if details.get('type') != 'Group':
+            if 'technical_entries' in details:
+                for entry in details['technical_entries']:
+                    technical_values.add(entry.get('value', 'Unknown'))
+            
+            if 'entries' in details:
+                for entry in details['entries']:
+                    entry_value = entry.get('value', '')
+                    entry_type = entry.get('type', '')
+                    
+                    if entry_type in TECHNICAL_TYPES:
+                        technical_values.add(entry_value)
+    
+    return jsonify(sorted(list(technical_values)))
+
+@app.route('/api/reload-metromap', methods=['POST'])
+def reload_metromap():
+    """Reload the metromap with custom exclusion settings"""
+    global excluded_entries
+    try:
+        data = request.get_json(silent=True) or {}
+        custom_excluded_entries = data.get('excludedEntries', [])
+        
+        excluded_entries = custom_excluded_entries
+        
+        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries, use_multiprocessing=False)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Reload error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
 
 def main():
     parser = argparse.ArgumentParser(
@@ -753,6 +605,16 @@ def main():
 
     global lokitiedosto
     lokitiedosto = args.jsonfile
+
+    global excluded_entries
+    try:
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
+        with open(common_values_path, "r", encoding="utf-8") as f:
+            excluded_entries = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    except Exception:
+        excluded_entries = []
 
     print(f"\nStarting up...\nTime: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
     
