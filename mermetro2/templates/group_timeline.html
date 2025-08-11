@@ -440,6 +440,12 @@
                 console.error('Update error:', error);
             }
         }
+        
+        function showModal(title, content) {
+            modalTitle.textContent = title;
+            modalContent.innerHTML = content;
+            modal.style.display = 'block';
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
             modal = document.getElementById('nodeModal');
