@@ -7,7 +7,7 @@
         mermaid.initialize({ 
             maxTextSize: 10000000000,
             maxEdges: 500000,
-            startOnLoad: true,
+            startOnLoad: false,
             flowchart: { htmlLabels: true, curve: 'linear' },
             securityLevel: 'loose'
         });
@@ -18,6 +18,8 @@
         let modal, modalTitle, modalContent;
         
         let excludedEntries = [];
+        
+        let currentMetromap = '';
 
         function createTable(entries, title, tooltipText, technicalClass = '') {
             return `
@@ -119,7 +121,7 @@
                 const uniqueValues = [...new Set(allEntries.map(e => e.value))];
                 content += createGroupSection('All unique entries after merge', uniqueValues);
 
-                content += '<p><b>Reason:</b> Two separate groups were merged because they shared a common tuple connection.</p><br>';
+                content += '<p><b>Reason:</b> Two separate groups were merged because of a tuple connection.</p><br>';
 
                 if (Array.isArray(nodeData.merging_tuple) && nodeData.merging_tuple.length > 0) {
                     content += createDetailsTable(nodeData.merging_tuple, 'Merging tuple details', 'Details of the entries that caused the merge');
@@ -135,14 +137,15 @@
                         content += `<h4>Group formed from tuple:</h4><p><b>Line ${tupleEntries[0].line}</b> at time ${tupleEntries[0].timestamp}</p>`;
                         content += createGroupSection('', tupleEntries).replace('<h4></h4>', '');
                         content += '<p><b>Reason:</b> These entries were found together on the same line and formed a tuple. Neither entry belonged to an existing group.</p><br>';
+                        content += createDetailsTable(nodeData.formed_from, 'Forming tuple details', 'Details of the entries that caused this group to form');
                     }
                 } else if (['GroupAdded', 'GroupJoined', 'Added'].includes(nodeData.type)) {
                     const uniqueValues = nodeData.entries ? [...new Set(nodeData.entries.map(entry => entry.value))] : [];
                     content += createGroupSection('Group now has:', uniqueValues);
                     content += '<p><b>Reason:</b> Entry was added to the group because of tuple below.</p><br>';
+                    content += createDetailsTable(nodeData.formed_from, 'Adding tuple details', 'Details of the entries that caused this group to form');
                 }
 
-                content += createDetailsTable(nodeData.formed_from, 'Forming tuple details', 'Details of the entries that caused this group to form');
             }
             else if (nodeData.type === 'Group' && nodeData.merge_log && nodeData.merge_log.length > 0) {
                 const formedLog = nodeData.merge_log.find(e => e.startsWith('FORMED:'));
@@ -170,11 +173,18 @@
         }
 
         function addClickEvents() {
-            document.querySelectorAll('.node').forEach(element => {
-                if (!element.id || element.id.startsWith('G')) return;
-                const clean = element.cloneNode(true);
-                element.parentNode.replaceChild(clean, element);
-                clean.addEventListener('click', () => showNodeDetails(clean.id));
+            document.querySelectorAll('.clickable-node')
+                .forEach(el => el.classList.remove('clickable-node'));
+            
+            document.querySelectorAll('.mermaid svg g[id]').forEach((element) => {
+                if (element.id && !element.dataset.clickAdded) {
+                    element.classList.add('clickable-node');
+                    element.dataset.clickAdded = 'true';
+                    element.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        showNodeDetails(element.id);
+                    });
+                }
             });
         }
 
@@ -209,7 +219,8 @@
                     currentTimeline = data.timeline;
                     selectedGroup = data.selected_group;
                     renderMermaid(currentTimeline);
-                    document.getElementById('selected-group').textContent = selectedGroup || 'None';
+                    const sel = document.getElementById('selected-group');
+                    if (sel) sel.textContent = selectedGroup || 'None';
                 }
             } catch (error) {
                 console.error('Error updating timeline:', error);
@@ -234,7 +245,9 @@
                         currentTimeline = data.timeline;
                         selectedGroup = data.selected_group;
                         renderMermaid(currentTimeline);
-                        document.getElementById('selected-group').textContent = selectedGroup;
+                        loadNodesVisualization(groupId);
+                        const sel = document.getElementById('selected-group');
+                        if (sel) sel.textContent = selectedGroup;
                         chartDirection = 'TD';
                         const directionBtn = document.getElementById('direction-btn');
                         if (directionBtn) directionBtn.textContent = 'Top Down';
@@ -248,6 +261,32 @@
                 });
         }
 
+        async function loadNodesVisualization(groupId) {
+            try {
+                const response = await fetch(`/api/visualization/nodes/${groupId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const nodesContainer = document.getElementById('nodes-container');
+                    nodesContainer.innerHTML = `<div class="mermaid">${data.visualization}</div>`;
+                    mermaid.init(undefined, nodesContainer.querySelector('.mermaid'));
+                    setTimeout(() => {
+                        addClickEvents();
+                    }, 1000);
+                } else {
+                    console.error('Failed to load nodes visualization:', data.error);
+                    const nodesContainer = document.getElementById('nodes-container');
+                    nodesContainer.innerHTML = `<div class="mermaid">flowchart TD\n    ERROR["${data.error || 'Failed to load nodes visualization'}"]</div>`;
+                    mermaid.init(undefined, nodesContainer.querySelector('.mermaid'));
+                }
+            } catch (error) {
+                console.error('Error loading nodes visualization:', error);
+                const nodesContainer = document.getElementById('nodes-container');
+                nodesContainer.innerHTML = `<div class="mermaid">flowchart TD\n    ERROR["Connection error"]</div>`;
+                mermaid.init(undefined, nodesContainer.querySelector('.mermaid'));
+            }
+        }
+
         async function loadGroups() {
             try {
                 const response = await fetch('/api/groups');
@@ -258,7 +297,7 @@
                     const group = groups[groupId];
                     const option = document.createElement('option');
                     option.value = groupId;
-                    option.textContent = `${groupId} (${group.count} entries, ${group.nodes - 1} nodes)`;
+                    option.textContent = `${groupId} (${group.count} entries, ${group.nodes} nodes)`;
                     if (groupId === selectedGroup) option.selected = true;
                     selector.appendChild(option);
                 });
@@ -272,23 +311,23 @@
 
         function showTechnicalModal(technicalData) {
             modalTitle.textContent = 'Filtered Entries';
-            
+
             const nodeListHtml = technicalData.length > 0 ? 
                 technicalData.map(value => 
                     `<div class="checkbox-item">
                         <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
-                            class="entry-checkbox" value="${value}" checked>
+                            class="entry-checkbox" value="${value}">
                         <label for="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}">${value}</label>
                     </div>`
                 ).join('') : 'N/A';
-            
+
             modalContent.innerHTML = `
                 <div class="detail-section">
                     <p><strong>Total unique values:</strong> ${technicalData.length}</p>
                     <p><strong>Filtered Entries:</strong>
                         <span class="info-tooltip">
                             ?
-                            <span class="tooltip-text">These values are either marked as filtered types or found in common_values.txt file. Unchecking entries will include them in the metromap logic (they can form or merge groups).</span>
+                            <span class="tooltip-text">These values are either marked as filtered types or found in common_values.txt file. Checking entries will include them in the metromap logic (they can form or merge groups).</span>
                         </span>    
                     </p>
                     <div class="checkbox-container">
@@ -301,53 +340,52 @@
                     </div>
                 </div>
             `;
-            
+
             document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
-                if (excludedEntries.includes(checkbox.value)) {
-                    checkbox.checked = false;
-                }
+                checkbox.checked = false;
                 checkbox.addEventListener('change', function() {
                     if (this.checked) {
                         excludedEntries = excludedEntries.filter(item => item !== this.value);
                     } else {
-                        excludedEntries.push(this.value);
+                        if (!excludedEntries.includes(this.value)) {
+                            excludedEntries.push(this.value);
+                        }
                     }
                 });
             });
-            
+
             document.getElementById('selectAllButton').addEventListener('click', function() {
                 document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
                     checkbox.checked = true;
                 });
                 excludedEntries = [];
             });
-            
+
             document.getElementById('deselectAllButton').addEventListener('click', function() {
                 document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
                     checkbox.checked = false;
                 });
                 excludedEntries = Array.from(document.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
             });
-            
+
+            document.getElementById('deselectAllButton').click();
+
             document.getElementById('reloadMapButton').addEventListener('click', function() {
                 this.textContent = 'Reloading...';
                 this.disabled = true;
-                
+
                 fetch('/api/reload-metromap', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ excludedEntries: excludedEntries })
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ excludedEntries: excludedEntries }),
+                    cache: 'no-store'
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        modal.style.display = 'none';
-                        updateTimeline();
-                        showRefreshNotification();
+                        updateMetromap();
                     } else {
-                        alert('Error reloading metromap: ' + (data.error || 'Unknown error'));
+                        alert('Reload failed');
                     }
                 })
                 .catch(error => {
@@ -355,44 +393,52 @@
                     alert('Error reloading metromap');
                 })
                 .finally(() => {
-                    this.textContent = 'Reload Metromap with Changes';
+                    this.textContent = 'Reload Metromap';
                     this.disabled = false;
                 });
             });
-            
             modal.style.display = 'block';
         }
 
-        function showRefreshNotification() {
-            const notification = document.createElement('div');
-            notification.id = 'refreshNotification';
-            notification.className = 'refresh-notification';
-            notification.innerHTML = `
-                <div class="refresh-notification-content">
-                    <h3>Metromap Updated Successfully!</h3>
-                    <strong>Please refresh the page to see the updated groups and timeline.</strong></p>
-                    <div class="refresh-buttons">
-                        <button id="refreshPageButton" class="refresh-page-button">Refresh Page Now</button>
-                        <button id="dismissButton" class="dismiss-button">Dismiss</button>
-                    </div>
-                </div>
-            `;
-            
-            document.body.appendChild(notification);
-            
-            document.getElementById('refreshPageButton').addEventListener('click', function() {
-                location.reload();
-            });
-            
-            document.getElementById('dismissButton').addEventListener('click', function() {
-                notification.remove();
-            });
-        }
+        async function updateMetromap(ignoreTimeFilters = false) {
+            try {
+                const params = new URLSearchParams();
+                params.append('t', Date.now());
 
-        function showModal(title, content) {
-            modalTitle.textContent = title;
-            modalContent.innerHTML = content;
-            modal.style.display = 'block';
+                if (ignoreTimeFilters) {
+                    params.append('reset', '1');
+                } else {
+                    const startDate = document.getElementById('startDate')?.value;
+                    const startTime = document.getElementById('startTime')?.value;
+                    const endDate = document.getElementById('endDate')?.value;
+                    const endTime = document.getElementById('endTime')?.value;
+
+                    if (startDate) {
+                        const startDateTime = startTime ? `${startDate}T${startTime}` : `${startDate}T00:00`;
+                        params.append('start', startDateTime);
+                    }
+                    if (endDate) {
+                        const endDateTime = endTime ? `${endDate}T${endTime}` : `${endDate}T23:59`;
+                        params.append('end', endDateTime);
+                    }
+                }
+
+                const response = await fetch(`/api/metromap?${params.toString()}`);
+                const data = await response.json();
+
+                if (data.metromap !== currentMetromap) {
+                    currentMetromap = data.metromap;
+                    const container = document.getElementById('metromap-container');
+                    container.innerHTML = `<div class="mermaid">${currentMetromap}</div>`;
+
+                    await mermaid.run({ querySelector: '#metromap-container .mermaid' });
+                    setTimeout(addClickEvents, 100);
+                    const ts = document.getElementById('timestamp');
+                    if (ts) ts.textContent = data.timestamp;
+                }
+            } catch (error) {
+                console.error('Update error:', error);
+            }
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -428,6 +474,39 @@
                     .catch(error => console.error('Error:', error));
             });
 
+            const applyBtn = document.getElementById('applyTimeRangeButton');
+            const clearBtn = document.getElementById('clearTimeRangeButton');
+            if (applyBtn) {
+                applyBtn.addEventListener('click', function() {
+                    const startDate = document.getElementById('startDate').value;
+                    const startTime = document.getElementById('startTime').value;
+                    const endDate = document.getElementById('endDate').value;
+                    const endTime = document.getElementById('endTime').value;
+                    
+                    if (startDate && endDate) {
+                        const startDateTime = `${startDate}T${startTime || '00:00'}`;
+                        const endDateTime = `${endDate}T${endTime || '23:59'}`;
+                        
+                        if (startDateTime > endDateTime) {
+                            alert('Start time must be before end time');
+                            return;
+                        }
+                    }
+                    
+                    updateMetromap();
+                });
+            }
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function() {
+                    document.getElementById('startDate').value = '';
+                    document.getElementById('startTime').value = '00:00';
+                    document.getElementById('endDate').value = '';
+                    document.getElementById('endTime').value = '23:59';
+
+                    updateMetromap(true);
+                });
+            }
+
             loadGroups();
             if (selectedGroup) updateTimeline();
 
@@ -446,7 +525,18 @@
                 addClickEvents();
                 addGroupClickEvents();
             }, 2000);
+
+            updateMetromap();
         });
+
+        setInterval(() => {
+            const startDate = document.getElementById('startDate')?.value;
+            const endDate = document.getElementById('endDate')?.value;
+            
+            if (!startDate && !endDate) {
+                updateMetromap();
+            }
+        }, 30000);
 
         setInterval(updateTimeline, 10000);
     </script>
@@ -455,6 +545,9 @@
         .header { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .status { color: #4CAF50; font-weight: bold; }
         .mermaid { text-align: center; background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); min-height: 400px; }
+        #nodes-container { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-top: 20px; min-height: 300px; }
+        #nodes-container .section-header { margin-bottom: 15px; }
+        .diagram-section { margin-bottom: 30px; }
         h1 { color: #333; text-align: center; margin: 0 0 20px 0; }
         .controls { background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px; }
         .control-group { margin-bottom: 10px; }
@@ -511,16 +604,68 @@
         .reload-button { background-color: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 14px; transition: background-color 0.3s; }
         .reload-button:hover { background-color: #388E3C; }
         .reload-button:disabled { background-color: #A5D6A7; cursor: not-allowed; }
-        .refresh-notification { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); z-index: 2000; display: flex; align-items: center; justify-content: center; }
-        .refresh-notification-content { background-color: white; padding: 30px; border-radius: 15px; box-shadow: 0 8px 25px rgba(0,0,0,0.3); text-align: center; max-width: 500px; margin: 20px; animation: slideIn 0.3s ease-out; }
-        .refresh-notification-content h3 { color: #4CAF50; margin: 0 0 15px 0; font-size: 20px; }
-        .refresh-notification-content p { color: #333; margin: 0 0 20px 0; line-height: 1.5; }
-        .refresh-buttons { display: flex; gap: 15px; justify-content: center; }
-        .refresh-page-button { background-color: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
-        .refresh-page-button:hover { background-color: #388E3C; }
-        .dismiss-button { background-color: #757575; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
-        .dismiss-button:hover { background-color: #616161; }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(-50px); } to { opacity: 1; transform: translateY(0); } }
+
+        .timerange-container {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        
+        .timerange-container label {
+            font-weight: bold;
+            color: #333;
+            font-size: 14px;
+        }
+        
+        .timerange-container input[type="date"], 
+        .timerange-container input[type="time"] {
+            padding: 6px 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            font-family: inherit;
+            background-color: white;
+        }
+        
+        .timerange-container input[type="date"]:focus,
+        .timerange-container input[type="time"]:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+        
+        .timerange-container button {
+            padding: 8px 16px;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+        }
+        
+        #applyTimeRangeButton {
+            background-color: #4CAF50;
+        }
+        
+        #applyTimeRangeButton:hover {
+            background-color: #388E3C;
+        }
+        
+        #clearTimeRangeButton {
+            background-color: #757575;
+        }
+        
+        #clearTimeRangeButton:hover {
+            background-color: #424242;
+        }
+
     </style>
 </head>
 <body>
@@ -536,10 +681,26 @@
         </div>
         <div class="control-group">
             <label>Last Update:</label>
-            <span class="status">{{ timestamp }}</span>
+            <span id="timestamp" class="status">{{ timestamp }}</span>
         </div>
         <button id="technicalButton">Filtered Entries</button>
     </div>
+
+    <div class="timerange-container">
+        <label for="startDate">Start Date:</label>
+        <input type="date" id="startDate" placeholder="yyyy-mm-dd">
+        <label for="startTime">Time:</label>
+        <input type="time" id="startTime" value="00:00">
+        
+        <label for="endDate">End Date:</label>
+        <input type="date" id="endDate" placeholder="yyyy-mm-dd">
+        <label for="endTime">Time:</label>
+        <input type="time" id="endTime" value="23:59">
+        
+        <button id="applyTimeRangeButton">Apply Time Range</button>
+        <button id="clearTimeRangeButton">Reset</button>
+    </div>
+
     <div class="diagram-section">
         <div class="section-header">
             <h2>Group Formation Timeline</h2>
@@ -554,6 +715,15 @@
             {% else %}
             <div class="mermaid"></div>
             {% endif %}
+        </div>
+    </div>
+    <div class="diagram-section">
+        <div class="section-header">
+            <h2>Node Relationships</h2>
+            <p style="color: #666; font-size: 14px; margin: 5px 0;">Shows internal connections between group entries</p>
+        </div>
+        <div class="diagram-container" id="nodes-container">
+            <div class="mermaid" id="nodes-mermaid"></div>
         </div>
     </div>
     <div id="nodeModal" class="modal">
