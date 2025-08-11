@@ -47,10 +47,22 @@
         function createGroupSection(title, entries) {
             return `
                 <h4>${title}</h4>
-                ${entries.length > 0 ? `
+                ${entries && entries.length > 0 ? `
                     <div class="group-section">
                         <ul class="entry-list">
-                            ${entries.map(entry => `<li>• ${entry.value || entry} ${entry.type ? `<span class="entry-type">(${entry.type})</span>` : ''}</li>`).join('')}
+                            ${entries.map(entry => {
+                                let value, type;
+                                if (entry && typeof entry === 'object') {
+                                    value = entry.value !== undefined ? entry.value : entry;
+                                    type = entry.type || '';
+                                } else {
+                                    value = entry;
+                                    type = '';
+                                }
+                                const isUrl = typeof value === 'string' && value.startsWith('http');
+                                const valueHtml = isUrl ? `<span class="url-value" title="${value}">${value}</span>` : `${value}`;
+                                return `<li>• ${valueHtml}${type ? ` <span class="entry-type">(${type})</span>` : ''}</li>`;
+                            }).join('')}
                         </ul>
                     </div>
                 ` : '<p class="no-entries">N/A</p>'}
@@ -96,7 +108,6 @@
 
         function showNodeOrGroupModal(nodeData) {
             let content = '<div class="node-info">';
-
             if (nodeData.type === 'GroupMerged') {
                 content += '<h4>Merged groups</h4>';
                 if (Array.isArray(nodeData.merged_groups)) {
@@ -116,13 +127,10 @@
                 } else {
                     content += '<p>N/A</p>';
                 }
-
                 const allEntries = Array.isArray(nodeData.entries) ? nodeData.entries : [];
                 const uniqueValues = [...new Set(allEntries.map(e => e.value))];
                 content += createGroupSection('All unique entries after merge', uniqueValues);
-
                 content += '<p><b>Reason:</b> Two separate groups were merged because of a tuple connection.</p><br>';
-
                 if (Array.isArray(nodeData.merging_tuple) && nodeData.merging_tuple.length > 0) {
                     content += createDetailsTable(nodeData.merging_tuple, 'Merging tuple details', 'Details of the entries that caused the merge');
                 } else {
@@ -130,7 +138,6 @@
                 }
             }
             else if ((nodeData.type === 'Group' || nodeData.type === 'GroupFormed' || nodeData.type === 'GroupAdded' || nodeData.type === 'GroupJoined' || nodeData.type === 'Added') && Array.isArray(nodeData.formed_from) && nodeData.formed_from.length > 0) {
-                
                 if (nodeData.type === 'GroupFormed') {
                     const tupleEntries = nodeData.formed_from.filter(e => e && e.tuple_line !== undefined);
                     if (tupleEntries.length >= 2 && tupleEntries.every(e => e.tuple_line === tupleEntries[0].tuple_line)) {
@@ -145,7 +152,6 @@
                     content += '<p><b>Reason:</b> Entry was added to the group because of tuple below.</p><br>';
                     content += createDetailsTable(nodeData.formed_from, 'Adding tuple details', 'Details of the entries that caused this group to form');
                 }
-
             }
             else if (nodeData.type === 'Group' && nodeData.merge_log && nodeData.merge_log.length > 0) {
                 const formedLog = nodeData.merge_log.find(e => e.startsWith('FORMED:'));
@@ -155,19 +161,16 @@
                         const [entryA, entryB] = [match[1].trim(), match[2].trim()];
                         const entryAinfo = nodeData.entries ? nodeData.entries.find(e => e.value === entryA) : null;
                         const entryBinfo = nodeData.entries ? nodeData.entries.find(e => e.value === entryB) : null;
-                        
                         const formattedEntries = [
                             entryAinfo ? `${entryA} <span class="entry-type">(line ${entryAinfo.line}, time ${entryAinfo.timestamp})</span>` : entryA,
                             entryBinfo ? `${entryB} <span class="entry-type">(line ${entryBinfo.line}, time ${entryBinfo.timestamp})</span>` : entryB
                         ];
-                        
                         content += createGroupSection('Group formed from:', formattedEntries);
                         content += '<p><b>Reason:</b> Both entries were not in any group, so a new group was formed.</p>';
                         content += createDetailsTable([entryAinfo, entryBinfo].filter(Boolean), 'Forming tuple details', 'Details of the two entries that caused this group to form');
                     }
                 }
             }
-
             content += '</div>';
             showModal(nodeData.value, content);
         }
@@ -588,7 +591,7 @@
         #direction-btn:hover { background: #e3f2fd; }
         .group-section { margin-bottom: 15px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 3px solid #2196F3; }
         .entry-list { margin: 8px 0; padding-left: 0; list-style: none; }
-        .entry-list li { margin: 4px 0; padding: 2px 0; font-family: monospace; font-size: 13px; }
+        .entry-list li { margin: 4px 0; padding: 2px 0; font-family: monospace; font-size: 13px; word-break: break-all; overflow-wrap: anywhere; }
         .entry-type { color: #666; font-size: 11px; font-style: italic; }
         .no-entries { color: #999; font-style: italic; margin: 5px 0; }
         .detail-section { margin-bottom: 20px; }

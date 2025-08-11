@@ -11,8 +11,8 @@ import nodes
 
 app = Flask(__name__)
 
-PERSONAL_TYPES = {'IP', 'MAC', 'Username', 'Email', 'Hostname', 'URL', 'DNSname'}
-TECHNICAL_TYPES = {'TTY', 'dsa', 'asdasd', 'dsadsa'}
+PERSONAL_TYPES = {'IP', 'MAC', 'Username', 'Email', 'Hostname', 'URL', 'DNSname', 'TTY'}
+TECHNICAL_TYPES = {'dsa', 'asdasd', 'dsadsa'}
 
 current_timeline = ""
 node_details = {}
