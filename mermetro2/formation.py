@@ -7,6 +7,7 @@ def get_node_value(node_key, node_details):
         return member_value
     return node_key
 
+
 def group_by_person(connections, node_details):
     """Luodaan henkilöryhmiä yhteyksien perusteella"""
     temp_merge_logs = {}
@@ -90,6 +91,14 @@ def group_by_person(connections, node_details):
 
     return person_groups, group_merge_log
 
+
+def _normalize_value(v):
+    """Normalize values for comparison (strip URL query params)."""
+    if isinstance(v, str) and v.startswith('http'):
+        return v.split('?', 1)[0]
+    return v
+
+
 def create_formed_from_data(group_id, val1, val2, node_details):
     group_entries = node_details[group_id].get('entries', []) if group_id in node_details else []
     
@@ -101,13 +110,17 @@ def create_formed_from_data(group_id, val1, val2, node_details):
             if line not in line_to_values:
                 line_to_values[line] = set()
                 line_to_entries[line] = []
-            line_to_values[line].add(entry.get('value', ''))
+            raw_val = entry.get('value', '')
+            norm_val = _normalize_value(raw_val)
+            line_to_values[line].add(norm_val)
             line_to_entries[line].append(entry)
     
-    # Etsi rivi jolla molemmat val1 ja val2 esiintyvät
+    # Etsi rivi jolla molemmat val1 ja val2 esiintyvät (normalized)
+    nval1 = _normalize_value(val1)
+    nval2 = _normalize_value(val2)
     found_line = None
     for line, valueset in line_to_values.items():
-        if val1 in valueset and val2 in valueset:
+        if nval1 in valueset and nval2 in valueset:
             found_line = line
             break
     
@@ -115,16 +128,21 @@ def create_formed_from_data(group_id, val1, val2, node_details):
     if found_line is not None:
         # Hae molempien tiedot samalta riviltä
         for v in (val1, val2):
+            nv = _normalize_value(v)
+            matched_entry = None
             for entry in line_to_entries[found_line]:
-                if entry.get('value') == v:
-                    formed_from.append({
-                        'value': v,
-                        'line': found_line,
-                        'timestamp': entry.get('timestamp', 'N/A'),
-                        'type': entry.get('type', 'Unknown'),
-                        'tuple_line': found_line
-                    })
+                ev = _normalize_value(entry.get('value'))
+                if ev == nv:
+                    matched_entry = entry
                     break
+            if matched_entry:
+                formed_from.append({
+                    'value': v,
+                    'line': found_line,
+                    'timestamp': matched_entry.get('timestamp', 'N/A'),
+                    'type': matched_entry.get('type', 'Unknown'),
+                    'tuple_line': found_line
+                })
             else:
                 formed_from.append({
                     'value': v,
@@ -135,7 +153,7 @@ def create_formed_from_data(group_id, val1, val2, node_details):
                 })
     else:
         for val in (val1, val2):
-            entries = [e for e in group_entries if e.get('value') == val]
+            entries = [e for e in group_entries if _normalize_value(e.get('value')) == _normalize_value(val)]
             if entries:
                 entry = entries[0]
                 formed_from.append({
@@ -151,8 +169,13 @@ def create_formed_from_data(group_id, val1, val2, node_details):
                     'timestamp': 'N/A',
                     'type': ''
                 })
+        if len(formed_from) == 2 and formed_from[0].get('line') == formed_from[1].get('line') and formed_from[0]['line'] not in (None, 'N/A'):
+            tl = formed_from[0]['line']
+            formed_from[0]['tuple_line'] = tl
+            formed_from[1]['tuple_line'] = tl
     
     return formed_from
+
 
 def generate_timeline_content(group_id, node_details):
     if group_id not in node_details:
@@ -227,7 +250,16 @@ def generate_timeline_content(group_id, node_details):
                         prev_members = members
                         prev_node_id = node_id
                         break
-                
+
+                if prev_members:
+                    if val1 in prev_members and val2 not in prev_members:
+                        old_entry, new_entry = val1, val2
+                    elif val2 in prev_members and val1 not in prev_members:
+                        old_entry, new_entry = val2, val1
+                    else:
+                        old_entry, new_entry = val1, val2  # fallback
+                else:
+                    old_entry, new_entry = val1, val2
                 new_members = frozenset(set(prev_members) | {val1, val2})
                 group_node_id = f"G{group_counter}_ADDED"
                 group_label = "<br>".join(sorted(new_members))
@@ -241,10 +273,17 @@ def generate_timeline_content(group_id, node_details):
                 if prev_node_id not in color_assignments:
                     next_color_index = (next_color_index + 1) % len(colors)
                 
-                connections.append(f"    {prev_node_id} -- \"{val1}<br>{val2}\" --> {group_node_id}")
+                connections.append(f"    {prev_node_id} -- \"{old_entry}<br>{new_entry}\" --> {group_node_id}")
 
                 formed_from = create_formed_from_data(group_id, val1, val2, node_details)
-                current_entries = [e for e in node_details[group_id].get('entries', []) if e.get('value') in new_members]
+                normalized_members = { _normalize_value(m) for m in new_members }
+                current_entries = []
+                seen_norm = set()
+                for e in node_details[group_id].get('entries', []):
+                    nv = _normalize_value(e.get('value'))
+                    if nv in normalized_members and nv not in seen_norm:
+                        current_entries.append(e)
+                        seen_norm.add(nv)
                 
                 node_details[group_node_id] = {
                     'type': 'GroupAdded',
@@ -292,16 +331,24 @@ def generate_timeline_content(group_id, node_details):
             
             def get_unique_entries(members):
                 unique_entries = []
-                seen_values = set()
+                seen_norm = set()
+                normalized_members = { _normalize_value(m) for m in members }
                 for e in group_entries:
-                    if e.get('value') in members and e.get('value') not in seen_values:
+                    nv = _normalize_value(e.get('value'))
+                    if nv in normalized_members and nv not in seen_norm:
                         unique_entries.append(e)
-                        seen_values.add(e.get('value'))
+                        seen_norm.add(nv)
                 return unique_entries
-            
             unique_group_a_entries = get_unique_entries(group_a_members)
             unique_group_b_entries = get_unique_entries(group_b_members)
-            merged_entries = [e for e in group_entries if e.get('value') in merged_members]
+            normalized_merged = { _normalize_value(m) for m in merged_members }
+            merged_entries = []
+            seen_norm_all = set()
+            for e in group_entries:
+                nv = _normalize_value(e.get('value'))
+                if nv in normalized_merged and nv not in seen_norm_all:
+                    merged_entries.append(e)
+                    seen_norm_all.add(nv)
 
             merging_tuple = []
             original_tuple_values = [v.strip() for v in log_entry[tuple_start:tuple_end].split(",") if v.strip()]
