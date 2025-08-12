@@ -250,7 +250,16 @@ def generate_timeline_content(group_id, node_details):
                         prev_members = members
                         prev_node_id = node_id
                         break
-                
+
+                if prev_members:
+                    if val1 in prev_members and val2 not in prev_members:
+                        old_entry, new_entry = val1, val2
+                    elif val2 in prev_members and val1 not in prev_members:
+                        old_entry, new_entry = val2, val1
+                    else:
+                        old_entry, new_entry = val1, val2  # fallback
+                else:
+                    old_entry, new_entry = val1, val2
                 new_members = frozenset(set(prev_members) | {val1, val2})
                 group_node_id = f"G{group_counter}_ADDED"
                 group_label = "<br>".join(sorted(new_members))
@@ -264,7 +273,7 @@ def generate_timeline_content(group_id, node_details):
                 if prev_node_id not in color_assignments:
                     next_color_index = (next_color_index + 1) % len(colors)
                 
-                connections.append(f"    {prev_node_id} -- \"{val1}<br>{val2}\" --> {group_node_id}")
+                connections.append(f"    {prev_node_id} -- \"{old_entry}<br>{new_entry}\" --> {group_node_id}")
 
                 formed_from = create_formed_from_data(group_id, val1, val2, node_details)
                 normalized_members = { _normalize_value(m) for m in new_members }
