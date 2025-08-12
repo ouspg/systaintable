@@ -255,6 +255,7 @@
                 .then(data => {
                     if (data.success) {
                         updateMetromap();
+                        showRefreshNotification();
                     } else {
                         alert('Reload failed');
                     }
@@ -326,6 +327,32 @@
             } catch (error) {
                 console.error('Update error:', error);
             }
+        }
+
+        function showRefreshNotification() {
+            const notification = document.createElement('div');
+            notification.id = 'refreshNotification';
+            notification.className = 'refresh-notification';
+            notification.innerHTML = `
+                <div class="refresh-notification-content">
+                    <h3>Metromap Updated Successfully!</h3>
+                    <strong>Please refresh the page to see the updated groups and timeline.</strong></p>
+                    <div class="refresh-buttons">
+                        <button id="refreshPageButton" class="refresh-page-button">Refresh Page Now</button>
+                        <button id="dismissButton" class="dismiss-button">Dismiss</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            document.getElementById('refreshPageButton').addEventListener('click', function() {
+                location.reload();
+            });
+            
+            document.getElementById('dismissButton').addEventListener('click', function() {
+                notification.remove();
+            });
         }
         
         function performSearch() {
@@ -861,6 +888,16 @@
             background-color: #A5D6A7;
             cursor: not-allowed;
         }
+        .refresh-notification { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+        .refresh-notification-content { background-color: white; padding: 30px; border-radius: 15px; box-shadow: 0 8px 25px rgba(0,0,0,0.3); text-align: center; max-width: 500px; margin: 20px; animation: slideIn 0.3s ease-out; }
+        .refresh-notification-content h3 { color: #4CAF50; margin: 0 0 15px 0; font-size: 20px; }
+        .refresh-notification-content p { color: #333; margin: 0 0 20px 0; line-height: 1.5; }
+        .refresh-buttons { display: flex; gap: 15px; justify-content: center; }
+        .refresh-page-button { background-color: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        .refresh-page-button:hover { background-color: #388E3C; }
+        .dismiss-button { background-color: #757575; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        .dismiss-button:hover { background-color: #616161; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-50px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>

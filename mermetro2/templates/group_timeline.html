@@ -387,6 +387,7 @@
                 .then(data => {
                     if (data.success) {
                         updateMetromap();
+                        showRefreshNotification();
                     } else {
                         alert('Reload failed');
                     }
@@ -442,6 +443,32 @@
             } catch (error) {
                 console.error('Update error:', error);
             }
+        }
+
+        function showRefreshNotification() {
+            const notification = document.createElement('div');
+            notification.id = 'refreshNotification';
+            notification.className = 'refresh-notification';
+            notification.innerHTML = `
+                <div class="refresh-notification-content">
+                    <h3>Metromap Updated Successfully!</h3>
+                    <strong>Please refresh the page to see the updated groups and timeline.</strong></p>
+                    <div class="refresh-buttons">
+                        <button id="refreshPageButton" class="refresh-page-button">Refresh Page Now</button>
+                        <button id="dismissButton" class="dismiss-button">Dismiss</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            document.getElementById('refreshPageButton').addEventListener('click', function() {
+                location.reload();
+            });
+            
+            document.getElementById('dismissButton').addEventListener('click', function() {
+                notification.remove();
+            });
         }
         
         function showModal(title, content) {
@@ -613,67 +640,25 @@
         .reload-button { background-color: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 14px; transition: background-color 0.3s; }
         .reload-button:hover { background-color: #388E3C; }
         .reload-button:disabled { background-color: #A5D6A7; cursor: not-allowed; }
-
-        .timerange-container {
-            margin-top: 15px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
-            padding: 10px;
-            background-color: #f9f9f9;
-            border-radius: 5px;
-            border: 1px solid #ddd;
-        }
-        
-        .timerange-container label {
-            font-weight: bold;
-            color: #333;
-            font-size: 14px;
-        }
-        
-        .timerange-container input[type="date"], 
-        .timerange-container input[type="time"] {
-            padding: 6px 10px;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
-            font-family: inherit;
-            background-color: white;
-        }
-        
-        .timerange-container input[type="date"]:focus,
-        .timerange-container input[type="time"]:focus {
-            outline: none;
-            border-color: #2196F3;
-        }
-        
-        .timerange-container button {
-            padding: 8px 16px;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 14px;
-            cursor: pointer;
-            font-family: inherit;
-            font-weight: bold;
-        }
-        
-        #applyTimeRangeButton {
-            background-color: #4CAF50;
-        }
-        
-        #applyTimeRangeButton:hover {
-            background-color: #388E3C;
-        }
-        
-        #clearTimeRangeButton {
-            background-color: #757575;
-        }
-        
-        #clearTimeRangeButton:hover {
-            background-color: #424242;
-        }
+        .timerange-container { margin-top: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px; background-color: #f9f9f9; border-radius: 5px; border: 1px solid #ddd; }
+        .timerange-container label { font-weight: bold; color: #333; font-size: 14px; }
+        .timerange-container input[type="date"], .timerange-container input[type="time"] { padding: 6px 10px; border: 2px solid #ddd; border-radius: 5px; font-size: 14px; font-family: inherit; background-color: white; }
+        .timerange-container input[type="date"]:focus, .timerange-container input[type="time"]:focus { outline: none; border-color: #2196F3; }
+        .timerange-container button { padding: 8px 16px; color: white; border: none; border-radius: 5px; font-size: 14px; cursor: pointer; font-family: inherit; font-weight: bold; }
+        #applyTimeRangeButton { background-color: #4CAF50; }
+        #applyTimeRangeButton:hover { background-color: #388E3C; }
+        #clearTimeRangeButton { background-color: #757575; }
+        #clearTimeRangeButton:hover { background-color: #424242; }
+        .refresh-notification { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+        .refresh-notification-content { background-color: white; padding: 30px; border-radius: 15px; box-shadow: 0 8px 25px rgba(0,0,0,0.3); text-align: center; max-width: 500px; margin: 20px; animation: slideIn 0.3s ease-out; }
+        .refresh-notification-content h3 { color: #4CAF50; margin: 0 0 15px 0; font-size: 20px; }
+        .refresh-notification-content p { color: #333; margin: 0 0 20px 0; line-height: 1.5; }
+        .refresh-buttons { display: flex; gap: 15px; justify-content: center; }
+        .refresh-page-button { background-color: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        .refresh-page-button:hover { background-color: #388E3C; }
+        .dismiss-button { background-color: #757575; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; transition: background-color 0.3s; }
+        .dismiss-button:hover { background-color: #616161; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-50px); } to { opacity: 1; transform: translateY(0); } }
 
     </style>
 </head>
