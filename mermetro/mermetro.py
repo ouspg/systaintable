@@ -739,7 +739,7 @@ def api_metromap():
     def _parse_query_dt(raw, label):
         try:
             if 'T' in raw:
-                return datetime.strptime(raw, '%Y-%m-%dT%H:%M')
+                return datetime.strptime(raw, '%Y-%m-%dT%H:%M:%S')
             else:
                 return datetime.strptime(raw, '%Y-%m-%d')
         except ValueError:
@@ -751,7 +751,8 @@ def api_metromap():
 
     if start_dt or end_dt:
         print(f"Time filtering: start={start_dt}, end={end_dt}")
-        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=False)
+        # MUUTA SEURAAVAN RIVIN MULTIPROCESSING FALSE TULEVAISUUDESSA
+        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=True)
         filtered_result = {
             'metromap': current_metromap,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -950,10 +951,16 @@ def reload_metromap():
     try:
         data = request.get_json(silent=True) or {}
         custom_excluded_entries = data.get('excludedEntries', [])
-        
+        multiprocessing_flag = bool(data.get('multiprocessing', False))
+
+        print(f"[reload] multiprocessing={multiprocessing_flag} excluded={len(custom_excluded_entries)}")
         excluded_entries = custom_excluded_entries
-        
-        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries, use_multiprocessing=False)
+
+        process_json_file(
+            reload_requested=True, 
+            custom_excluded_entries=custom_excluded_entries, 
+            use_multiprocessing=multiprocessing_flag
+        )
         
         return jsonify({'success': True})
     except Exception as e:

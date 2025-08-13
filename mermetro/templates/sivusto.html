@@ -207,7 +207,8 @@
                         <div class="checkbox-list">${nodeListHtml}</div>
                     </div>
                     <div class="reload-container">
-                        <button id="reloadMapButton" class="reload-button">Reload Metromap with Changes</button>
+                        <button id="reloadMapButton" class="reload-button">Reload Metromap</button>
+                        <button id="reloadMapMPButton" class="reload-button">Reload with Multiprocessing</button>
                     </div>
                 </div>
             `;
@@ -241,14 +242,23 @@
 
             document.getElementById('deselectAllButton').click();
 
-            document.getElementById('reloadMapButton').addEventListener('click', function() {
-                this.textContent = 'Reloading...';
-                this.disabled = true;
+            function performReload(multiprocessing) {
+                const normalBtn = document.getElementById('reloadMapButton');
+                const mpBtn = document.getElementById('reloadMapMPButton');
+                const activeBtn = multiprocessing ? mpBtn : normalBtn;
+
+                const originalText = activeBtn.textContent;
+                activeBtn.textContent = 'Reloading...';
+                normalBtn.disabled = true;
+                mpBtn.disabled = true;
 
                 fetch('/api/reload-metromap', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({ excludedEntries: excludedEntries }),
+                    body: JSON.stringify({ 
+                        excludedEntries: excludedEntries,
+                        multiprocessing: multiprocessing 
+                    }),
                     cache: 'no-store'
                 })
                 .then(response => response.json())
@@ -265,9 +275,17 @@
                     alert('Error reloading metromap');
                 })
                 .finally(() => {
-                    this.textContent = 'Reload Metromap';
-                    this.disabled = false;
+                    activeBtn.textContent = originalText;
+                    normalBtn.disabled = false;
+                    mpBtn.disabled = false;
                 });
+            }
+
+            document.getElementById('reloadMapButton').addEventListener('click', function() {
+                performReload(false);
+            });
+            document.getElementById('reloadMapMPButton').addEventListener('click', function() {
+                performReload(true);
             });
 
             modal.style.display = 'block';
@@ -923,12 +941,12 @@
             <label for="startDate">Start Date:</label>
             <input type="date" id="startDate" placeholder="yyyy-mm-dd">
             <label for="startTime">Time:</label>
-            <input type="time" id="startTime" value="00:00">
+            <input type="time" id="startTime" value="00:00" step="1">
             
             <label for="endDate">End Date:</label>
             <input type="date" id="endDate" placeholder="yyyy-mm-dd">
             <label for="endTime">Time:</label>
-            <input type="time" id="endTime" value="23:59">
+            <input type="time" id="endTime" value="23:59" step="1">
             
             <button id="applyTimeRangeButton">Apply Time Range</button>
             <button id="clearTimeRangeButton">Reset</button>
