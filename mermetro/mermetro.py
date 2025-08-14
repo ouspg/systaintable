@@ -832,16 +832,18 @@ def api_search(search_term):
 
                 if match_found:
                     if is_timestamp_search:
-                        if '.' in clean_search_term and ':' in clean_search_term:
+                        if details.get('type') == 'Group':
+                            display_text = f"{node_id} (Match in group)"
+                        elif '-' in clean_search_term and ':' in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Full timestamp match: {entry_time})"
-                        elif '.' in clean_search_term and ':' not in clean_search_term:
+                        elif '-' in clean_search_term and ':' not in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Date match: {entry_time})"
-                        elif ':' in clean_search_term and '.' not in clean_search_term:
+                        elif ':' in clean_search_term and '-' not in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Time match: {entry_time})"
                         else:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Timestamp match: {entry_time})"
                     elif is_combined_search:
-                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {entry_value} at {entry_time})"
+                        display_text = f"{details.get('type', 'Unknown')}: {node_id} (Combined match: {entry_value} at {entry_time})"
                     else:
                         display_text = f"{node_id} (part of group)"
                     results.append({
