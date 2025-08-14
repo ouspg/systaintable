@@ -881,7 +881,7 @@ def api_search(search_term):
                     elif is_combined_search:
                         display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {text_part} at {time_part} in technical)"
                     else:
-                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (found in technical entries)"
+                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (found in filtered entries)"
                     
                     results.append({
                         'node_id': node_id,
