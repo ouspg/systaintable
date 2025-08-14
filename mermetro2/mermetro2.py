@@ -30,13 +30,11 @@ def parse_timestamp_to_datetime(timestamp_str):
         # 2024-12-16 23:38:50
         if len(timestamp_str) == 19 and '-' in timestamp_str and ':' in timestamp_str:
             return datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
-        
         # Dec 16 23:38:50
         if len(timestamp_str.split()) == 3:
             current_year = datetime.now().year
             timestamp_with_year = f"{current_year} {timestamp_str}"
             return datetime.strptime(timestamp_with_year, '%Y %b %d %H:%M:%S')
-        
         return None
     except Exception:
         return None
@@ -446,7 +444,11 @@ def api_metromap():
     def _parse_query_dt(raw, label):
         try:
             if 'T' in raw:
-                return datetime.strptime(raw, '%Y-%m-%dT%H:%M')
+                # Sekuntitarkkuus
+                if len(raw.split('T')[1].split(':')) == 3:
+                    return datetime.strptime(raw, '%Y-%m-%dT%H:%M:%S')
+                else:
+                    return datetime.strptime(raw, '%Y-%m-%dT%H:%M')
             else:
                 return datetime.strptime(raw, '%Y-%m-%d')
         except ValueError:

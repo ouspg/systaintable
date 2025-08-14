@@ -739,7 +739,7 @@ def api_metromap():
     def _parse_query_dt(raw, label):
         try:
             if 'T' in raw:
-                return datetime.strptime(raw, '%Y-%m-%dT%H:%M')
+                return datetime.strptime(raw, '%Y-%m-%dT%H:%M:%S')
             else:
                 return datetime.strptime(raw, '%Y-%m-%d')
         except ValueError:
@@ -751,7 +751,8 @@ def api_metromap():
 
     if start_dt or end_dt:
         print(f"Time filtering: start={start_dt}, end={end_dt}")
-        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=False)
+        # MUUTA SEURAAVAN RIVIN MULTIPROCESSING FALSE TULEVAISUUDESSA
+        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=True)
         filtered_result = {
             'metromap': current_metromap,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -831,16 +832,18 @@ def api_search(search_term):
 
                 if match_found:
                     if is_timestamp_search:
-                        if '.' in clean_search_term and ':' in clean_search_term:
+                        if details.get('type') == 'Group':
+                            display_text = f"{node_id} (Match in group)"
+                        elif '-' in clean_search_term and ':' in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Full timestamp match: {entry_time})"
-                        elif '.' in clean_search_term and ':' not in clean_search_term:
+                        elif '-' in clean_search_term and ':' not in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Date match: {entry_time})"
-                        elif ':' in clean_search_term and '.' not in clean_search_term:
+                        elif ':' in clean_search_term and '-' not in clean_search_term:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Time match: {entry_time})"
                         else:
                             display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Timestamp match: {entry_time})"
                     elif is_combined_search:
-                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {entry_value} at {entry_time})"
+                        display_text = f"{details.get('type', 'Unknown')}: {node_id} (Combined match: {entry_value} at {entry_time})"
                     else:
                         display_text = f"{node_id} (part of group)"
                     results.append({
@@ -880,7 +883,7 @@ def api_search(search_term):
                     elif is_combined_search:
                         display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {text_part} at {time_part} in technical)"
                     else:
-                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (found in technical entries)"
+                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (found in filtered entries)"
                     
                     results.append({
                         'node_id': node_id,
@@ -950,10 +953,16 @@ def reload_metromap():
     try:
         data = request.get_json(silent=True) or {}
         custom_excluded_entries = data.get('excludedEntries', [])
-        
+        multiprocessing_flag = bool(data.get('multiprocessing', False))
+
+        print(f"[reload] multiprocessing={multiprocessing_flag} excluded={len(custom_excluded_entries)}")
         excluded_entries = custom_excluded_entries
-        
-        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries, use_multiprocessing=False)
+
+        process_json_file(
+            reload_requested=True, 
+            custom_excluded_entries=custom_excluded_entries, 
+            use_multiprocessing=multiprocessing_flag
+        )
         
         return jsonify({'success': True})
     except Exception as e:
