@@ -264,14 +264,10 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        updateMetromap();
+                        return updateMetromap();
                     } else {
                         alert('Reload failed');
                     }
-                })
-                .catch(error => {
-                    console.error('Reload error:', error);
-                    alert('Error reloading metromap');
                 })
                 .finally(() => {
                     activeBtn.textContent = originalText;
