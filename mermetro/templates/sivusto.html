@@ -195,6 +195,13 @@
             modalContent.innerHTML = `
                 <div class="detail-section">
                     <p><strong>Total unique values:</strong> ${technicalData.length}</p>
+
+                    <div style="margin:10px 0;">
+                        <input id="newCommonValue" type="text" placeholder="Remove / Add value to common_values.txt" 
+                               style="padding:6px; width:70%; margin-right:8px;">
+                        <button id="addCommonButton" class="filter-button">Remove / Add common value</button>
+                    </div>
+
                     <p><strong>Filtered Entries:</strong>
                         <span class="info-tooltip">
                             ?
@@ -207,40 +214,36 @@
                         <div class="checkbox-list">${nodeListHtml}</div>
                     </div>
                     <div class="reload-container">
-                        <button id="reloadMapButton" class="reload-button">Reload Metromap</button>
-                        <button id="reloadMapMPButton" class="reload-button">Reload with Multiprocessing</button>
+                        <button id="reloadMapButton" class="reload-button">Process</button>
+                        <button id="reloadMapMPButton" class="reload-button">Process (MP)</button>
                     </div>
                 </div>
             `;
 
-            document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
-                checkbox.checked = false;
-                checkbox.addEventListener('change', function() {
-                    if (this.checked) {
-                        excludedEntries = excludedEntries.filter(item => item !== this.value);
-                    } else {
-                        if (!excludedEntries.includes(this.value)) {
-                            excludedEntries.push(this.value);
-                        }
-                    }
-                });
-            });
+            const checkboxList = modalContent.querySelector('.checkbox-list');
 
-            document.getElementById('selectAllButton').addEventListener('click', function() {
-                document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
-                    checkbox.checked = true;
-                });
+            checkboxList.onchange = function(e) {
+                const cb = e.target;
+                if (!cb || !cb.classList || !cb.classList.contains('entry-checkbox')) return;
+                if (cb.checked) {
+                    excludedEntries = excludedEntries.filter(item => item !== cb.value);
+                } else {
+                    if (!excludedEntries.includes(cb.value)) excludedEntries.push(cb.value);
+                }
+            };
+
+            const selectAllBtn = document.getElementById('selectAllButton');
+            const deselectAllBtn = document.getElementById('deselectAllButton');
+            selectAllBtn.onclick = function() {
+                checkboxList.querySelectorAll('.entry-checkbox').forEach(checkbox => checkbox.checked = true);
                 excludedEntries = [];
-            });
+            };
+            deselectAllBtn.onclick = function() {
+                checkboxList.querySelectorAll('.entry-checkbox').forEach(checkbox => checkbox.checked = false);
+                excludedEntries = Array.from(checkboxList.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
+            };
 
-            document.getElementById('deselectAllButton').addEventListener('click', function() {
-                document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
-                    checkbox.checked = false;
-                });
-                excludedEntries = Array.from(document.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
-            });
-
-            document.getElementById('deselectAllButton').click();
+            deselectAllBtn.click();
 
             function performReload(multiprocessing) {
                 const normalBtn = document.getElementById('reloadMapButton');
@@ -248,7 +251,7 @@
                 const activeBtn = multiprocessing ? mpBtn : normalBtn;
 
                 const originalText = activeBtn.textContent;
-                activeBtn.textContent = 'Reloading...';
+                activeBtn.textContent = 'Processing...';
                 normalBtn.disabled = true;
                 mpBtn.disabled = true;
 
@@ -263,11 +266,8 @@
                 })
                 .then(response => response.json())
                 .then(data => {
-                    if (data.success) {
-                        return updateMetromap();
-                    } else {
-                        alert('Reload failed');
-                    }
+                    if (data.success) return updateMetromap();
+                    alert('Process failed');
                 })
                 .finally(() => {
                     activeBtn.textContent = originalText;
@@ -276,12 +276,45 @@
                 });
             }
 
-            document.getElementById('reloadMapButton').addEventListener('click', function() {
-                performReload(false);
-            });
-            document.getElementById('reloadMapMPButton').addEventListener('click', function() {
-                performReload(true);
-            });
+            document.getElementById('reloadMapButton').onclick = function() { performReload(false); };
+            document.getElementById('reloadMapMPButton').onclick = function() { performReload(true); };
+
+            const addCommonBtn = document.getElementById('addCommonButton');
+            addCommonBtn.onclick = function() {
+                const val = document.getElementById('newCommonValue').value.trim();
+                if (!val) { alert('Enter a non-empty value.'); return; }
+                if (val.length > 500 || val.includes('\n') || val.includes('\r')) { alert('Value too long or contains invalid characters.'); return; }
+
+                fetch('/api/common/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ value: val })
+                })
+                .then(r => r.json())
+                .then(resp => {
+                    if (resp.success) {
+                        if (resp.action === 'removed') alert('Removed from common_values.txt');
+                        else if (resp.action === 'added') alert('Added to common_values.txt');
+                        else alert('Updated common_values.txt');
+
+                        fetch('/api/technical-entries', { cache: 'no-store' })
+                            .then(r => r.json())
+                            .then(data => {
+                                checkboxList.innerHTML = data.map(value => 
+                                    `<div class="checkbox-item">
+                                        <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
+                                            class="entry-checkbox" value="${value}">
+                                        <label for="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}">${value}</label>
+                                    </div>`
+                                ).join('');
+                                deselectAllBtn.click();
+                            });
+                    } else {
+                        alert('Operation failed: ' + (resp.message || 'unknown'));
+                    }
+                })
+                .catch(err => { console.error(err); alert('Request failed'); });
+            };
 
             modal.style.display = 'block';
         }

@@ -969,6 +969,68 @@ def reload_metromap():
         print(f"Reload error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/common/add', methods=['POST'])
+def api_add_common_entry():
+    try:
+        data = request.get_json(silent=True) or {}
+        value = (data.get('value') or '').strip()
+        if not value:
+            return jsonify({'success': False, 'message': 'Empty value'}), 400
+        if '\n' in value or '\r' in value or len(value) > 500:
+            return jsonify({'success': False, 'message': 'Invalid value'}), 400
+
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
+
+        try:
+            with open(common_values_path, 'r', encoding='utf-8') as f:
+                lines = f.read().splitlines()
+        except FileNotFoundError:
+            lines = []
+
+        existing_values = {line.strip() for line in lines if line.strip() and not line.strip().startswith('#')}
+
+        if value in existing_values:
+            new_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#') and stripped == value:
+                    continue
+                new_lines.append(line)
+            action = 'removed'
+        else:
+            new_lines = lines + [value]
+            action = 'added'
+
+        dirpath = os.path.dirname(common_values_path) or '.'
+        os.makedirs(dirpath, exist_ok=True)
+        tmp_path = common_values_path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as tf:
+            if new_lines:
+                tf.write('\n'.join(new_lines).rstrip('\n') + '\n')
+
+        os.replace(tmp_path, common_values_path)
+
+        try:
+            with open(common_values_path, 'r', encoding='utf-8') as f:
+                excluded_entries_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        except Exception:
+            excluded_entries_list = []
+
+        global excluded_entries
+        excluded_entries = excluded_entries_list
+
+        try:
+            process_json_file(reload_requested=True, custom_excluded_entries=excluded_entries, use_multiprocessing=False)
+        except Exception as e:
+            return jsonify({'success': True, 'action': action, 'message': 'File updated but reprocessing failed: ' + str(e)}), 200
+
+        return jsonify({'success': True, 'action': action})
+    except Exception as e:
+        print(f"api_common_add error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 def create_html_file(metromap_content):
     """Luo staattinen HTML-tiedosto"""
     html_content = f"""<!DOCTYPE html>
