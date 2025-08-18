@@ -257,7 +257,7 @@ def generate_timeline_content(group_id, node_details):
                     elif val2 in prev_members and val1 not in prev_members:
                         old_entry, new_entry = val2, val1
                     else:
-                        old_entry, new_entry = val1, val2  # fallback
+                        old_entry, new_entry = val1, val2
                 else:
                     old_entry, new_entry = val1, val2
                 new_members = frozenset(set(prev_members) | {val1, val2})

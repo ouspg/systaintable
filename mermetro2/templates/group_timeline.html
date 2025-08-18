@@ -315,6 +315,15 @@
         function showTechnicalModal(technicalData) {
             modalTitle.textContent = 'Filtered Entries';
 
+            const storageKey = 'mermetro_excludedEntries_v1';
+            let savedExcluded = null;
+            try {
+                const raw = localStorage.getItem(storageKey);
+                if (raw) savedExcluded = JSON.parse(raw);
+            } catch (e) {
+                console.warn('Failed to read saved excluded entries', e);
+            }
+
             const nodeListHtml = technicalData.length > 0 ? 
                 technicalData.map(value => 
                     `<div class="checkbox-item">
@@ -362,6 +371,7 @@
                 } else {
                     if (!excludedEntries.includes(cb.value)) excludedEntries.push(cb.value);
                 }
+                try { localStorage.setItem(storageKey, JSON.stringify(excludedEntries)); } catch (err) {}
             };
 
             const selectAllBtn = document.getElementById('selectAllButton');
@@ -369,13 +379,22 @@
             selectAllBtn.onclick = function() {
                 checkboxList.querySelectorAll('.entry-checkbox').forEach(checkbox => checkbox.checked = true);
                 excludedEntries = [];
+                try { localStorage.setItem(storageKey, JSON.stringify(excludedEntries)); } catch (err) {}
             };
             deselectAllBtn.onclick = function() {
                 checkboxList.querySelectorAll('.entry-checkbox').forEach(checkbox => checkbox.checked = false);
                 excludedEntries = Array.from(checkboxList.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
+                try { localStorage.setItem(storageKey, JSON.stringify(excludedEntries)); } catch (err) {}
             };
 
-            deselectAllBtn.click();
+            if (Array.isArray(savedExcluded)) {
+                checkboxList.querySelectorAll('.entry-checkbox').forEach(cb => {
+                    cb.checked = !savedExcluded.includes(cb.value);
+                });
+                excludedEntries = savedExcluded.slice();
+            } else {
+                deselectAllBtn.click();
+            }
 
             function performReload(multiprocessing) {
                 const normalBtn = document.getElementById('reloadMapButton');
@@ -398,7 +417,10 @@
                 })
                 .then(response => response.json())
                 .then(data => {
-                    if (data.success) return updateMetromap();
+                    if (data.success) {
+                        showRefreshNotification();
+                        return updateMetromap();
+                    }
                     alert('Process failed');
                 })
                 .finally(() => {
@@ -412,40 +434,63 @@
             document.getElementById('reloadMapMPButton').onclick = function() { performReload(true); };
 
             const addCommonBtn = document.getElementById('addCommonButton');
-            addCommonBtn.onclick = function() {
+            addCommonBtn.onclick = async function() {
                 const val = document.getElementById('newCommonValue').value.trim();
                 if (!val) { alert('Enter a non-empty value.'); return; }
                 if (val.length > 500 || val.includes('\n') || val.includes('\r')) { alert('Value too long or contains invalid characters.'); return; }
 
-                fetch('/api/common/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({ value: val })
-                })
-                .then(r => r.json())
-                .then(resp => {
+                let originalText = addCommonBtn.textContent;
+                try {
+                    const existing = await fetch('/api/technical-entries', { cache: 'no-store' }).then(r => r.json());
+                    const willRemove = Array.isArray(existing) && existing.includes(val);
+
+                    addCommonBtn.textContent = willRemove ? 'Removing...' : 'Adding...';
+                    addCommonBtn.disabled = true;
+
+                    const resp = await fetch('/api/common/add', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ value: val })
+                    }).then(r => r.json());
+
                     if (resp.success) {
                         if (resp.action === 'removed') alert('Removed from common_values.txt');
                         else if (resp.action === 'added') alert('Added to common_values.txt');
                         else alert('Updated common_values.txt');
 
-                        fetch('/api/technical-entries', { cache: 'no-store' })
-                            .then(r => r.json())
-                            .then(data => {
-                                checkboxList.innerHTML = data.map(value => 
-                                    `<div class="checkbox-item">
-                                        <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
-                                            class="entry-checkbox" value="${value}">
-                                        <label for="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}">${value}</label>
-                                    </div>`
-                                ).join('');
+                        const data = await fetch('/api/technical-entries', { cache: 'no-store' }).then(r => r.json());
+                        checkboxList.innerHTML = data.map(value => 
+                            `<div class="checkbox-item">
+                                <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
+                                    class="entry-checkbox" value="${value}">
+                                <label for="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}">${value}</label>
+                            </div>`
+                        ).join('');
+                        
+                        try {
+                            const raw = localStorage.getItem(storageKey);
+                            if (raw) {
+                                const currentSaved = JSON.parse(raw);
+                                checkboxList.querySelectorAll('.entry-checkbox').forEach(cb => {
+                                    cb.checked = !currentSaved.includes(cb.value);
+                                });
+                                excludedEntries = currentSaved.slice();
+                            } else {
                                 deselectAllBtn.click();
-                            });
+                            }
+                        } catch (e) {
+                            deselectAllBtn.click();
+                        }
                     } else {
                         alert('Operation failed: ' + (resp.message || 'unknown'));
                     }
-                })
-                .catch(err => { console.error(err); alert('Request failed'); });
+                } catch (err) {
+                    console.error(err);
+                    alert('Request failed');
+                } finally {
+                    addCommonBtn.textContent = originalText;
+                    addCommonBtn.disabled = false;
+                }
             };
 
             modal.style.display = 'block';
@@ -633,7 +678,7 @@
         .header { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .status { color: #4CAF50; font-weight: bold; }
         .mermaid { text-align: center; background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); min-height: 400px; }
-        #nodes-container { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-top: 20px; min-height: 300px; }
+        #nodes-container { background-color: transparent; padding: 0; border-radius: 0; box-shadow: none; margin-top: 20px; min-height: 0; }
         #nodes-container .section-header { margin-bottom: 15px; }
         .diagram-section { margin-bottom: 30px; }
         h1 { color: #333; text-align: center; margin: 0 0 20px 0; }
