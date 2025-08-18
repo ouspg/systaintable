@@ -508,8 +508,8 @@
                 const endTime = document.getElementById('endTime').value;
                 
                 if (startDate && endDate) {
-                    const startDateTime = `${startDate}T${startTime || '00:00'}`;
-                    const endDateTime = `${endDate}T${endTime || '23:59'}`;
+                    const startDateTime = `${startDate}T${startTime || '00:00:00'}`;
+                    const endDateTime = `${endDate}T${endTime || '23:59:59'}`;
                     
                     if (startDateTime > endDateTime) {
                         alert('Start time must be before end time');
@@ -517,16 +517,30 @@
                     }
                 }
                 
-                updateMetromap();
+                const applyBtn = document.getElementById('applyTimeRangeButton');
+                applyBtn.textContent = 'Reloading...';
+                applyBtn.disabled = true;
+                
+                updateMetromap().finally(() => {
+                    applyBtn.textContent = 'Apply Time Range';
+                    applyBtn.disabled = false;
+                });
             });
             
             document.getElementById('clearTimeRangeButton').addEventListener('click', function() {
+                const clearBtn = document.getElementById('clearTimeRangeButton');
+                clearBtn.textContent = 'Resetting...';
+                clearBtn.disabled = true;
+                
                 document.getElementById('startDate').value = '';
-                document.getElementById('startTime').value = '00:00';
+                document.getElementById('startTime').value = '00:00:00';
                 document.getElementById('endDate').value = '';
-                document.getElementById('endTime').value = '23:59';
+                document.getElementById('endTime').value = '23:59:59';
 
-                updateMetromap(true);
+                updateMetromap(true).finally(() => {
+                    clearBtn.textContent = 'Reset';
+                    clearBtn.disabled = false;
+                });
             });
         });
         
