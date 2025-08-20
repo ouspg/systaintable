@@ -15,6 +15,7 @@ current_metromap = ""
 node_details = {}
 group_merge_log = {}
 excluded_entries = []
+startup_multiprocessing = False
 
 
 def parse_timestamp_to_datetime(timestamp_str):
@@ -751,8 +752,7 @@ def api_metromap():
 
     if start_dt or end_dt:
         print(f"Time filtering: start={start_dt}, end={end_dt}")
-        # MUUTA SEURAAVAN RIVIN MULTIPROCESSING FALSE TULEVAISUUDESSA
-        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=True)
+        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
         filtered_result = {
             'metromap': current_metromap,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -1073,6 +1073,9 @@ def main():
     global lokitiedosto
     lokitiedosto = args.jsonfile
 
+    global startup_multiprocessing
+    startup_multiprocessing = bool(args.multiprocessing)
+
     global excluded_entries
     try:
         common_values_path = os.path.join('data', 'common_values.txt')
@@ -1085,7 +1088,7 @@ def main():
 
     print("\nStarting up...")
     print(f"Time: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
-    process_json_file(use_multiprocessing=args.multiprocessing)
+    process_json_file(use_multiprocessing=startup_multiprocessing)
 
     with open('data/metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
         f.write(current_metromap)
