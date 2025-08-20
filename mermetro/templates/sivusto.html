@@ -286,8 +286,9 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        showRefreshNotification();
-                        return updateMetromap();
+                        return updateMetromap().then(() => {
+                            showRefreshNotification();
+                        });
                     }
                     alert('Process failed');
                 })
@@ -464,7 +465,22 @@
             modalContent = document.getElementById('modalContent');
             searchResults = document.getElementById('searchResults');
             
-            updateMetromap();
+            const startDateEl = document.getElementById('startDate');
+            const endDateEl = document.getElementById('endDate');
+            if ((startDateEl && startDateEl.value) || (endDateEl && endDateEl.value)) {
+                console.log('skip');
+                const mermaidDiv = document.querySelector('.mermaid');
+                if (mermaidDiv) {
+                    currentMetromap = (mermaidDiv.textContent || mermaidDiv.innerText || '').trim();
+                    mermaid.run({ querySelector: '.mermaid' }).then(() => {
+                        setTimeout(addClickEvents, 100);
+                    }).catch(err => {
+                        console.error('mermaid render failed on load-skip:', err);
+                    });
+                }
+            } else {
+                updateMetromap();
+            }
             
             const closeBtn = document.getElementsByClassName('close')[0];
             if (closeBtn) {

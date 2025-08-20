@@ -418,8 +418,9 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        showRefreshNotification();
-                        return updateMetromap();
+                        return updateMetromap().then(() => {
+                            showRefreshNotification();
+                        });
                     }
                     alert('Process failed');
                 })
@@ -668,8 +669,14 @@
                 addGroupClickEvents();
             }, 2000);
 
-            updateMetromap();
-        });
+            const startDateEl = document.getElementById('startDate');
+            const endDateEl = document.getElementById('endDate');
+            if ((startDateEl && startDateEl.value) || (endDateEl && endDateEl.value)) {
+                console.log('skip');
+            } else {
+                updateMetromap();
+            }
+         });
 
         setInterval(updateTimeline, 30000);
     </script>
