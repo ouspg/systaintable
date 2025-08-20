@@ -32,11 +32,11 @@ pip install -r requirements.txt
 Run `mermetro2.py` as in the example below and wait, it can take several minutes to complete with larger files. Switch -m enables multiprocessing. 
 
 ```console
-python3 mermetro.py2 data/lokitiedosto.json
+python3 mermetro2.py data/lokitiedosto.json
 ```
 OR
 ```console
-python3 mermetro.py2 data/lokitiedosto.json -m
+python3 mermetro2.py data/lokitiedosto.json -m
 ```
 
 Open http://localhost:5000
