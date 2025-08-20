@@ -65,7 +65,7 @@
                 <div class="detail-section">
                     <p><strong>Entries:</strong> ${nodeData.value}</p>
                     <p><strong>Every group unique entry:</strong><br/>${nodeListHtml}</p>
-                    <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Filtered: ${technicalCount})</p>
+                    <p><strong>Count:</strong> ${totalCount}</p>
                     <p><strong>First:</strong> ${nodeData.first_seen}</p>
                     <p><strong>Last:</strong> ${nodeData.last_seen}</p>
                 </div>
@@ -107,7 +107,7 @@
             
             let content = `
                 <div class="detail-section">
-                    <p><strong>Count:</strong> ${totalCount} (Unique: ${personalCount}, Filtered: ${technicalCount})</p>
+                    <p><strong>Count:</strong> ${totalCount}</p>
                     <p><strong>First:</strong> ${nodeData.first_seen}</p>
                     <p><strong>Last:</strong> ${nodeData.last_seen}</p>
                 </div>
@@ -157,7 +157,7 @@
                     <p><strong>Filtered entries</strong>
                         <span class="info-tooltip">
                             ?
-                            <span class="tooltip-text">These entries have been filtered to keep metromap readable</span>
+                            <span class="tooltip-text">These entries appeared with the entry above, but have been filtered out to keep metromap readable</span>
                         </span>
                     </p>
                     <table class="entries-table technical-table">
