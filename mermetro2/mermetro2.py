@@ -20,6 +20,7 @@ group_merge_log = {}
 selected_group_id = None
 available_groups = {}
 excluded_entries = []
+startup_multiprocessing = False
 
 def parse_timestamp_to_datetime(timestamp_str):
     """Muuntaa timestamp-merkkijonon datetime-objektiksi"""
@@ -585,7 +586,7 @@ def reload_metromap():
         
         excluded_entries = custom_excluded_entries
         
-        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries, use_multiprocessing=False)
+        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries, use_multiprocessing=startup_multiprocessing)
         
         return jsonify({'success': True})
     except Exception as e:
@@ -670,6 +671,9 @@ def main():
     global lokitiedosto
     lokitiedosto = args.jsonfile
 
+    global startup_multiprocessing
+    startup_multiprocessing = bool(args.multiprocessing)
+
     global excluded_entries
     try:
         common_values_path = os.path.join('data', 'common_values.txt')
@@ -682,7 +686,7 @@ def main():
 
     print(f"\nStarting up...\nTime: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
     
-    process_json_file(use_multiprocessing=args.multiprocessing)
+    process_json_file(use_multiprocessing=startup_multiprocessing)
 
     print(f"Found {len(available_groups)} groups")
     print("Groups will be selectable on the web interface.")
