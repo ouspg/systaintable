@@ -111,10 +111,12 @@ def generate_nodes_content(group_id, node_details):
     content += "classDiagram\n\n"
 
     line_to_class_name = {}
+    line_class_order = []
 
     for line in sorted(selected_lines):
         class_name = f"LINE_{line}"
         line_to_class_name[line] = class_name
+        line_class_order.append(class_name)
         
         timestamp = lines_to_timestamps.get(line, "N/A")
     
@@ -137,6 +139,12 @@ def generate_nodes_content(group_id, node_details):
             content += f"    {clean_value}\n"
         content += f"    Time: ({timestamp})\n"
         content += "}\n\n"
+
+    if len(line_class_order) > 5:
+        for i in range(5, len(line_class_order)):
+            prev_class = line_class_order[i - 5]
+            curr_class = line_class_order[i]
+            content += f"{prev_class} .. {curr_class}\n"
 
     processed_connections = set()
     merge_logs = group_data.get('merge_log', [])

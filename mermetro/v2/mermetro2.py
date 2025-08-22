@@ -1,13 +1,11 @@
-import argparse
 import json
 import sys
+import os
 from datetime import datetime
 from flask import Flask, render_template, jsonify, send_from_directory, request
-import os
 from multiprocessing import Pool, cpu_count
 
-import formation
-import nodes
+from . import formation, nodes
 
 app = Flask(__name__)
 
@@ -20,6 +18,8 @@ group_merge_log = {}
 selected_group_id = None
 available_groups = {}
 excluded_entries = []
+startup_multiprocessing = False
+lokitiedosto = None  # path provided by unified launcher
 
 def parse_timestamp_to_datetime(timestamp_str):
     """Muuntaa timestamp-merkkijonon datetime-objektiksi"""
@@ -414,7 +414,7 @@ def index():
                           available_groups=available_groups,
                           timestamp=datetime.now().strftime('%H:%M:%S'))
 
-@app.route('/api/timeline')
+@app.route('/api/v2/timeline')
 def api_timeline():
     """API timeline-sisällön hakuun"""
     return jsonify({
@@ -423,7 +423,7 @@ def api_timeline():
         'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
-@app.route('/api/metromap')
+@app.route('/api/v2/timestampfilter')
 def api_metromap():
     """API metrokartan hakuun (timestamp filtering)"""
     global current_timeline, node_details
@@ -468,12 +468,12 @@ def api_metromap():
         return jsonify(filtered_result)
     return jsonify({'metromap': current_timeline, 'timestamp': datetime.now().strftime('%H:%M:%S')})
 
-@app.route('/api/groups')
+@app.route('/api/v2/groups')
 def api_groups():
     """API ryhmien hakuun"""
     return jsonify(available_groups)
 
-@app.route('/api/select-group/<group_id>')
+@app.route('/api/v2/select-group/<group_id>')
 def api_select_group(group_id):
     """API ryhmän valintaan"""
     global selected_group_id, current_timeline
@@ -489,11 +489,39 @@ def api_select_group(group_id):
     else:
         return jsonify({'success': False, 'error': 'Group not found'}), 404
 
-@app.route('/api/node-details/<node_id>')
+@app.route('/api/v2/node-details/<node_id>')
 def api_node_details(node_id):
     """API entryn tietojen hakemiseen"""
     if node_id.startswith("flowchart-"):
         node_id = node_id.replace("flowchart-", "")
+
+    # classDiagram node id muotoa classId-LINE_95755-7
+    line_only = None
+    if node_id.startswith('classId-') and 'LINE_' in node_id:
+        import re
+        m = re.search(r'(LINE_\d+)', node_id)
+        if m:
+            line_only = m.group(1)
+    elif node_id.startswith('LINE_'):
+        line_only = node_id
+
+    if line_only and selected_group_id and selected_group_id in node_details:
+        group_entries = node_details[selected_group_id].get('entries', [])
+        line_num_str = line_only.split('_', 1)[1]
+        try:
+            line_num = int(line_num_str)
+        except ValueError:
+            line_num = None
+        if line_num is not None:
+            line_entries = [e for e in group_entries if e.get('line') == line_num]
+            if line_entries:
+                return jsonify({
+                    'type': 'LineEntries',
+                    'value': f'Entries on line {line_num}',
+                    'line': line_num,
+                    'entries': line_entries,
+                    'count': len(line_entries)
+                })
 
     node_id_clean = node_id.split('-')[0]
 
@@ -509,7 +537,7 @@ def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
-@app.route('/api/visualization/<viz_type>/<group_id>')
+@app.route('/api/v2/visualization/<viz_type>/<group_id>')
 def api_visualization(viz_type, group_id):
     """API eri visualisointityyppien hakemiseen"""
     if group_id not in available_groups:
@@ -531,16 +559,10 @@ def api_visualization(viz_type, group_id):
             'type': 'nodes',
             'group_id': group_id
         })
-    elif viz_type == 'timeline':
-        return jsonify({
-            'success': False,
-            'error': 'Chronological timeline visualization not yet made',
-            'type': viz_type
-        })
     else:
         return jsonify({'error': 'Unknown visualization type'}), 400
 
-@app.route('/api/technical-entries')
+@app.route('/api/v2/filtered-entries')
 def api_technical_entries():
     """API teknisten ja yleisten entryjen hakuun"""
     global excluded_entries
@@ -575,7 +597,7 @@ def api_technical_entries():
     
     return jsonify(sorted(list(technical_values)))
 
-@app.route('/api/reload-metromap', methods=['POST'])
+@app.route('/api/v2/reload', methods=['POST'])
 def reload_metromap():
     """Reload the metromap with custom exclusion settings"""
     global excluded_entries
@@ -585,30 +607,86 @@ def reload_metromap():
         
         excluded_entries = custom_excluded_entries
         
-        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries, use_multiprocessing=False)
+        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries, use_multiprocessing=startup_multiprocessing)
         
         return jsonify({'success': True})
     except Exception as e:
         print(f"Reload error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Example: python3 mermetro2.py data/lokitiedosto.json -m"
-    )
-    parser.add_argument("jsonfile", help="Path to the log JSON file")
-    parser.add_argument("-m", "--multiprocessing", action="store_true", help="Enable multiprocessing for processing")
-    args = parser.parse_args()
-    
-    if not os.path.isfile(args.jsonfile):
-        print(f"Error: File '{args.jsonfile}' not found.\n")
-        parser.print_help()
-        exit(1)
+@app.route('/api/v2/common/add', methods=['POST'])
+def api_add_common_entry():
+    try:
+        data = request.get_json(silent=True) or {}
+        value = (data.get('value') or '').strip()
+        if not value:
+            return jsonify({'success': False, 'message': 'Empty value'}), 400
+        if '\n' in value or '\r' in value or len(value) > 500:
+            return jsonify({'success': False, 'message': 'Invalid value'}), 400
 
-    global lokitiedosto
-    lokitiedosto = args.jsonfile
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
 
-    global excluded_entries
+        try:
+            with open(common_values_path, 'r', encoding='utf-8') as f:
+                lines = f.read().splitlines()
+        except FileNotFoundError:
+            lines = []
+
+        existing_values = {line.strip() for line in lines if line.strip() and not line.strip().startswith('#')}
+
+        if value in existing_values:
+            new_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#') and stripped == value:
+                    continue
+                new_lines.append(line)
+            action = 'removed'
+        else:
+            new_lines = lines + [value]
+            action = 'added'
+
+        dirpath = os.path.dirname(common_values_path) or '.'
+        os.makedirs(dirpath, exist_ok=True)
+        tmp_path = common_values_path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as tf:
+            if new_lines:
+                tf.write('\n'.join(new_lines).rstrip('\n') + '\n')
+
+        os.replace(tmp_path, common_values_path)
+
+        try:
+            with open(common_values_path, 'r', encoding='utf-8') as f:
+                excluded_entries_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        except Exception:
+            excluded_entries_list = []
+
+        global excluded_entries
+        excluded_entries = excluded_entries_list
+
+        try:
+            process_json_file(reload_requested=True, custom_excluded_entries=excluded_entries, use_multiprocessing=False)
+        except Exception as e:
+            return jsonify({'success': True, 'action': action, 'message': 'File updated but reprocessing failed: ' + str(e)}), 200
+
+        return jsonify({'success': True, 'action': action})
+    except Exception as e:
+        print(f"api_common_add error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5001):
+
+    global lokitiedosto, startup_multiprocessing, excluded_entries, available_groups
+
+    if not os.path.isfile(jsonfile):
+        print(f"Error: File '{jsonfile}' not found.")
+        return
+
+    lokitiedosto = jsonfile
+    startup_multiprocessing = bool(multiprocessing)
+
     try:
         common_values_path = os.path.join('data', 'common_values.txt')
         if not os.path.exists(common_values_path):
@@ -618,19 +696,9 @@ def main():
     except Exception:
         excluded_entries = []
 
-    print(f"\nStarting up...\nTime: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
-    
-    process_json_file(use_multiprocessing=args.multiprocessing)
+    process_json_file(use_multiprocessing=startup_multiprocessing)
 
-    print(f"Found {len(available_groups)} groups")
-    print("Groups will be selectable on the web interface.")
-    print(f"\nAvailable Groups: {', '.join(available_groups.keys())}")
-    print("\nAccess:\n   Live-page: http://localhost:5001")
-    
     try:
-        app.run(debug=False, host='127.0.0.1', port=5001)
+        app.run(debug=False, host=host, port=port)
     except KeyboardInterrupt:
         print("\nStopped by user")
-
-if __name__ == "__main__":
-    main()

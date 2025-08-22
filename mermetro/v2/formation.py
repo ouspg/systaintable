@@ -257,12 +257,19 @@ def generate_timeline_content(group_id, node_details):
                     elif val2 in prev_members and val1 not in prev_members:
                         old_entry, new_entry = val2, val1
                     else:
-                        old_entry, new_entry = val1, val2  # fallback
+                        old_entry, new_entry = val1, val2
                 else:
                     old_entry, new_entry = val1, val2
-                new_members = frozenset(set(prev_members) | {val1, val2})
+                new_members = frozenset(set(prev_members) | {val1, val2}) if prev_members else frozenset({val1, val2})
                 group_node_id = f"G{group_counter}_ADDED"
-                group_label = "<br>".join(sorted(new_members))
+
+                label_parts = []
+                for m in sorted(new_members):
+                    if m == new_entry:
+                        label_parts.append(f"<b>{m}</b>")
+                    else:
+                        label_parts.append(m)
+                group_label = "<br>".join(label_parts)
                 node_definitions.append(f"    {group_node_id}(\"{group_label}\"):::node")
                 group_nodes.append((new_members, group_node_id))
                 group_id_map[new_members] = group_node_id
@@ -273,8 +280,10 @@ def generate_timeline_content(group_id, node_details):
                 if prev_node_id not in color_assignments:
                     next_color_index = (next_color_index + 1) % len(colors)
                 
-                connections.append(f"    {prev_node_id} -- \"{old_entry}<br>{new_entry}\" --> {group_node_id}")
-
+                edge_label = f"{old_entry}<br><b>{new_entry}</b>" if new_entry else f"{old_entry}"
+                if prev_node_id:
+                    connections.append(f"    {prev_node_id} -- \"{edge_label}\" --> {group_node_id}")
+                
                 formed_from = create_formed_from_data(group_id, val1, val2, node_details)
                 normalized_members = { _normalize_value(m) for m in new_members }
                 current_entries = []
@@ -290,7 +299,8 @@ def generate_timeline_content(group_id, node_details):
                     'value': f"ADDED: ({val1}, {val2})",
                     'formed_from': formed_from,
                     'merge_log': [log_entry],
-                    'entries': current_entries
+                    'entries': current_entries,
+                    'new_member': new_entry
                 }
 
         elif "MERGED:" in log_entry:

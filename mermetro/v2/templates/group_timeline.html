@@ -94,7 +94,7 @@
 
         window.showNodeDetails = function(nodeId) {
             const cleanNodeId = nodeId.startsWith('flowchart-') ? nodeId.substring(10) : nodeId;
-            fetch(`/api/node-details/${cleanNodeId}`)
+            fetch(`/api/v2/node-details/${cleanNodeId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
@@ -108,7 +108,15 @@
 
         function showNodeOrGroupModal(nodeData) {
             let content = '<div class="node-info">';
-            if (nodeData.type === 'GroupMerged') {
+            if (nodeData.type === 'LineEntries') {
+                content += `<h4>All entries on line ${nodeData.line}</h4>`;
+                if (Array.isArray(nodeData.entries) && nodeData.entries.length > 0) {
+                    content += createDetailsTable(nodeData.entries, 'Line entries', 'All entries that appeared on this log line');
+                } else {
+                    content += '<p class="no-entries">N/A</p>';
+                }
+            }
+            else if (nodeData.type === 'GroupMerged') {
                 content += '<h4>Merged groups</h4>';
                 if (Array.isArray(nodeData.merged_groups)) {
                     nodeData.merged_groups.forEach((group, idx) => {
@@ -216,7 +224,7 @@
 
         async function updateTimeline() {
             try {
-                const response = await fetch('/api/timeline');
+                const response = await fetch('/api/v2/timeline');
                 const data = await response.json();
                 if (data.timeline !== currentTimeline) {
                     currentTimeline = data.timeline;
@@ -231,7 +239,7 @@
         }
 
         function updateTimelineWithDirection() {
-            fetch('/api/timeline')
+            fetch('/api/v2/timeline')
                 .then(response => response.json())
                 .then(data => {
                     const timeline = data.timeline.replace(/flowchart (TD|LR)/, `flowchart ${chartDirection}`);
@@ -241,7 +249,7 @@
         }
 
         function selectGroup(groupId) {
-            fetch(`/api/select-group/${groupId}`)
+            fetch(`/api/v2/select-group/${groupId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -266,7 +274,7 @@
 
         async function loadNodesVisualization(groupId) {
             try {
-                const response = await fetch(`/api/visualization/nodes/${groupId}`);
+                const response = await fetch(`/api/v2/visualization/nodes/${groupId}`);
                 const data = await response.json();
                 
                 if (data.success) {
@@ -292,7 +300,7 @@
 
         async function loadGroups() {
             try {
-                const response = await fetch('/api/groups');
+                const response = await fetch('/api/v2/groups');
                 const groups = await response.json();
                 const selector = document.getElementById('group-selector');
                 selector.innerHTML = '<option value="">Select a group...</option>';
@@ -315,6 +323,15 @@
         function showTechnicalModal(technicalData) {
             modalTitle.textContent = 'Filtered Entries';
 
+            const storageKey = 'mermetro_excludedEntries_v1';
+            let savedExcluded = null;
+            try {
+                const raw = localStorage.getItem(storageKey);
+                if (raw) savedExcluded = JSON.parse(raw);
+            } catch (e) {
+                console.warn('Failed to read saved excluded entries', e);
+            }
+
             const nodeListHtml = technicalData.length > 0 ? 
                 technicalData.map(value => 
                     `<div class="checkbox-item">
@@ -327,6 +344,13 @@
             modalContent.innerHTML = `
                 <div class="detail-section">
                     <p><strong>Total unique values:</strong> ${technicalData.length}</p>
+
+                    <div style="margin:10px 0;">
+                        <input id="newCommonValue" type="text" placeholder="Remove / Add value to common_values.txt" 
+                               style="padding:6px; width:70%; margin-right:8px;">
+                        <button id="addCommonButton" class="filter-button">Remove / Add common value</button>
+                    </div>
+
                     <p><strong>Filtered Entries:</strong>
                         <span class="info-tooltip">
                             ?
@@ -339,68 +363,145 @@
                         <div class="checkbox-list">${nodeListHtml}</div>
                     </div>
                     <div class="reload-container">
-                        <button id="reloadMapButton" class="reload-button">Reload Metromap with Changes</button>
+                        <button id="reloadMapButton" class="reload-button">Process</button>
+                        <button id="reloadMapMPButton" class="reload-button">Process (MP)</button>
                     </div>
                 </div>
             `;
 
-            document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
-                checkbox.checked = false;
-                checkbox.addEventListener('change', function() {
-                    if (this.checked) {
-                        excludedEntries = excludedEntries.filter(item => item !== this.value);
-                    } else {
-                        if (!excludedEntries.includes(this.value)) {
-                            excludedEntries.push(this.value);
-                        }
-                    }
-                });
-            });
+            const checkboxList = modalContent.querySelector('.checkbox-list');
 
-            document.getElementById('selectAllButton').addEventListener('click', function() {
-                document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
-                    checkbox.checked = true;
-                });
+            checkboxList.onchange = function(e) {
+                const cb = e.target;
+                if (!cb || !cb.classList || !cb.classList.contains('entry-checkbox')) return;
+                if (cb.checked) {
+                    excludedEntries = excludedEntries.filter(item => item !== cb.value);
+                } else {
+                    if (!excludedEntries.includes(cb.value)) excludedEntries.push(cb.value);
+                }
+                try { localStorage.setItem(storageKey, JSON.stringify(excludedEntries)); } catch (err) {}
+            };
+
+            const selectAllBtn = document.getElementById('selectAllButton');
+            const deselectAllBtn = document.getElementById('deselectAllButton');
+            selectAllBtn.onclick = function() {
+                checkboxList.querySelectorAll('.entry-checkbox').forEach(checkbox => checkbox.checked = true);
                 excludedEntries = [];
-            });
+                try { localStorage.setItem(storageKey, JSON.stringify(excludedEntries)); } catch (err) {}
+            };
+            deselectAllBtn.onclick = function() {
+                checkboxList.querySelectorAll('.entry-checkbox').forEach(checkbox => checkbox.checked = false);
+                excludedEntries = Array.from(checkboxList.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
+                try { localStorage.setItem(storageKey, JSON.stringify(excludedEntries)); } catch (err) {}
+            };
 
-            document.getElementById('deselectAllButton').addEventListener('click', function() {
-                document.querySelectorAll('.entry-checkbox').forEach(checkbox => {
-                    checkbox.checked = false;
+            if (Array.isArray(savedExcluded)) {
+                checkboxList.querySelectorAll('.entry-checkbox').forEach(cb => {
+                    cb.checked = !savedExcluded.includes(cb.value);
                 });
-                excludedEntries = Array.from(document.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
-            });
+                excludedEntries = savedExcluded.slice();
+            } else {
+                deselectAllBtn.click();
+            }
 
-            document.getElementById('deselectAllButton').click();
+            function performReload(multiprocessing) {
+                const normalBtn = document.getElementById('reloadMapButton');
+                const mpBtn = document.getElementById('reloadMapMPButton');
+                const activeBtn = multiprocessing ? mpBtn : normalBtn;
 
-            document.getElementById('reloadMapButton').addEventListener('click', function() {
-                this.textContent = 'Reloading...';
-                this.disabled = true;
+                const originalText = activeBtn.textContent;
+                activeBtn.textContent = 'Processing...';
+                normalBtn.disabled = true;
+                mpBtn.disabled = true;
 
-                fetch('/api/reload-metromap', {
+                fetch('/api/v2/reload', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({ excludedEntries: excludedEntries }),
+                    body: JSON.stringify({ 
+                        excludedEntries: excludedEntries,
+                        multiprocessing: multiprocessing 
+                    }),
                     cache: 'no-store'
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        updateMetromap();
-                        showRefreshNotification();
-                    } else {
-                        alert('Reload failed');
+                        return updateMetromap().then(() => {
+                            showRefreshNotification();
+                        });
                     }
-                })
-                .catch(error => {
-                    console.error('Reload error:', error);
-                    alert('Error reloading metromap');
+                    alert('Process failed');
                 })
                 .finally(() => {
-                    this.textContent = 'Reload Metromap';
-                    this.disabled = false;
+                    activeBtn.textContent = originalText;
+                    normalBtn.disabled = false;
+                    mpBtn.disabled = false;
                 });
-            });
+            }
+
+            document.getElementById('reloadMapButton').onclick = function() { performReload(false); };
+            document.getElementById('reloadMapMPButton').onclick = function() { performReload(true); };
+
+            const addCommonBtn = document.getElementById('addCommonButton');
+            addCommonBtn.onclick = async function() {
+                const val = document.getElementById('newCommonValue').value.trim();
+                if (!val) { alert('Enter a non-empty value.'); return; }
+                if (val.length > 500 || val.includes('\n') || val.includes('\r')) { alert('Value too long or contains invalid characters.'); return; }
+
+                let originalText = addCommonBtn.textContent;
+                try {
+                    const existing = await fetch('/api/v2/filtered-entries', { cache: 'no-store' }).then(r => r.json());
+                    const willRemove = Array.isArray(existing) && existing.includes(val);
+
+                    addCommonBtn.textContent = willRemove ? 'Removing...' : 'Adding...';
+                    addCommonBtn.disabled = true;
+
+                    const resp = await fetch('/api/v2/common/add', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ value: val })
+                    }).then(r => r.json());
+
+                    if (resp.success) {
+                        if (resp.action === 'removed') alert('Removed from common_values.txt');
+                        else if (resp.action === 'added') alert('Added to common_values.txt');
+                        else alert('Updated common_values.txt');
+
+                        const data = await fetch('/api/v2/filtered-entries', { cache: 'no-store' }).then(r => r.json());
+                        checkboxList.innerHTML = data.map(value => 
+                            `<div class="checkbox-item">
+                                <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
+                                    class="entry-checkbox" value="${value}">
+                                <label for="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}">${value}</label>
+                            </div>`
+                        ).join('');
+                        
+                        try {
+                            const raw = localStorage.getItem(storageKey);
+                            if (raw) {
+                                const currentSaved = JSON.parse(raw);
+                                checkboxList.querySelectorAll('.entry-checkbox').forEach(cb => {
+                                    cb.checked = !currentSaved.includes(cb.value);
+                                });
+                                excludedEntries = currentSaved.slice();
+                            } else {
+                                deselectAllBtn.click();
+                            }
+                        } catch (e) {
+                            deselectAllBtn.click();
+                        }
+                    } else {
+                        alert('Operation failed: ' + (resp.message || 'unknown'));
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Request failed');
+                } finally {
+                    addCommonBtn.textContent = originalText;
+                    addCommonBtn.disabled = false;
+                }
+            };
+
             modal.style.display = 'block';
         }
 
@@ -427,7 +528,7 @@
                     }
                 }
 
-                const response = await fetch(`/api/metromap?${params.toString()}`);
+                const response = await fetch(`/api/v2/timestampfilter?${params.toString()}`);
                 const data = await response.json();
 
                 if (data.metromap !== currentMetromap) {
@@ -500,7 +601,7 @@
             });
 
             document.getElementById('technicalButton').addEventListener('click', function() {
-                fetch('/api/technical-entries')
+                fetch('/api/v2/filtered-entries')
                     .then(response => response.json())
                     .then(data => {
                         if (!data.error) {
@@ -576,8 +677,14 @@
                 addGroupClickEvents();
             }, 2000);
 
-            updateMetromap();
-        });
+            const startDateEl = document.getElementById('startDate');
+            const endDateEl = document.getElementById('endDate');
+            if ((startDateEl && startDateEl.value) || (endDateEl && endDateEl.value)) {
+                console.log('skip');
+            } else {
+                updateMetromap();
+            }
+         });
 
         setInterval(updateTimeline, 30000);
     </script>
@@ -586,7 +693,7 @@
         .header { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .status { color: #4CAF50; font-weight: bold; }
         .mermaid { text-align: center; background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); min-height: 400px; }
-        #nodes-container { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-top: 20px; min-height: 300px; }
+        #nodes-container { background-color: transparent; padding: 0; border-radius: 0; box-shadow: none; margin-top: 20px; min-height: 0; }
         #nodes-container .section-header { margin-bottom: 15px; }
         .diagram-section { margin-bottom: 30px; }
         h1 { color: #333; text-align: center; margin: 0 0 20px 0; }

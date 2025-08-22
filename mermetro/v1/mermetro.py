@@ -1,6 +1,5 @@
 import json
 import sys
-import argparse
 import os
 from datetime import datetime
 from flask import Flask, render_template, jsonify, send_from_directory, request
@@ -15,6 +14,8 @@ current_metromap = ""
 node_details = {}
 group_merge_log = {}
 excluded_entries = []
+startup_multiprocessing = False
+lokitiedosto = None  # Global to store path passed from unified launcher
 
 
 def parse_timestamp_to_datetime(timestamp_str):
@@ -718,7 +719,7 @@ def index():
                                   metromap=current_metromap,
                                   timestamp=datetime.now().strftime('%H:%M:%S'))
 
-@app.route('/api/metromap')
+@app.route('/api/v1/metromap')
 def api_metromap():
     """API metrokartan hakuun"""
     global current_metromap, node_details
@@ -751,8 +752,7 @@ def api_metromap():
 
     if start_dt or end_dt:
         print(f"Time filtering: start={start_dt}, end={end_dt}")
-        # MUUTA SEURAAVAN RIVIN MULTIPROCESSING FALSE TULEVAISUUDESSA
-        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=True)
+        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
         filtered_result = {
             'metromap': current_metromap,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -760,7 +760,7 @@ def api_metromap():
         return jsonify(filtered_result)
     return jsonify({'metromap': current_metromap, 'timestamp': datetime.now().strftime('%H:%M:%S')})
 
-@app.route('/api/node-details/<node_id>')
+@app.route('/api/v1/node-details/<node_id>')
 def api_node_details(node_id):
     """API entryn tietojen hakemiseen"""
     if node_id in node_details:
@@ -780,7 +780,7 @@ def api_node_details(node_id):
             return jsonify(node_details[key])
     return jsonify({'error': 'Node not found'}), 404
 
-@app.route('/api/search/<search_term>')
+@app.route('/api/v1/search/<search_term>')
 def api_search(search_term):
     """API hakutoiminnolle"""
     results = []
@@ -911,7 +911,7 @@ def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
-@app.route('/api/technical-entries')
+@app.route('/api/v1/technical-entries')
 def api_technical_entries():
     """API teknisten ja yleisten entryjen hakuun"""
     global excluded_entries
@@ -946,7 +946,7 @@ def api_technical_entries():
     
     return jsonify(sorted(list(technical_values)))
 
-@app.route('/api/reload-metromap', methods=['POST'])
+@app.route('/api/v1/reload-metromap', methods=['POST'])
 def reload_metromap():
     """Reload the metromap with custom exclusion settings"""
     global excluded_entries
@@ -960,7 +960,7 @@ def reload_metromap():
 
         process_json_file(
             reload_requested=True, 
-            custom_excluded_entries=custom_excluded_entries, 
+            custom_excluded_entries=excluded_entries, 
             use_multiprocessing=multiprocessing_flag
         )
         
@@ -969,6 +969,68 @@ def reload_metromap():
         print(f"Reload error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/v1/common/add', methods=['POST'])
+def api_add_common_entry():
+    try:
+        data = request.get_json(silent=True) or {}
+        value = (data.get('value') or '').strip()
+        if not value:
+            return jsonify({'success': False, 'message': 'Empty value'}), 400
+        if '\n' in value or '\r' in value or len(value) > 500:
+            return jsonify({'success': False, 'message': 'Invalid value'}), 400
+
+        common_values_path = os.path.join('data', 'common_values.txt')
+        if not os.path.exists(common_values_path):
+            common_values_path = 'common_values.txt'
+
+        try:
+            with open(common_values_path, 'r', encoding='utf-8') as f:
+                lines = f.read().splitlines()
+        except FileNotFoundError:
+            lines = []
+
+        existing_values = {line.strip() for line in lines if line.strip() and not line.strip().startswith('#')}
+
+        if value in existing_values:
+            new_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#') and stripped == value:
+                    continue
+                new_lines.append(line)
+            action = 'removed'
+        else:
+            new_lines = lines + [value]
+            action = 'added'
+
+        dirpath = os.path.dirname(common_values_path) or '.'
+        os.makedirs(dirpath, exist_ok=True)
+        tmp_path = common_values_path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as tf:
+            if new_lines:
+                tf.write('\n'.join(new_lines).rstrip('\n') + '\n')
+
+        os.replace(tmp_path, common_values_path)
+
+        try:
+            with open(common_values_path, 'r', encoding='utf-8') as f:
+                excluded_entries_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        except Exception:
+            excluded_entries_list = []
+
+        global excluded_entries
+        excluded_entries = excluded_entries_list
+
+        try:
+            process_json_file(reload_requested=True, custom_excluded_entries=excluded_entries, use_multiprocessing=False)
+        except Exception as e:
+            return jsonify({'success': True, 'action': action, 'message': 'File updated but reprocessing failed: ' + str(e)}), 200
+
+        return jsonify({'success': True, 'action': action})
+    except Exception as e:
+        print(f"api_common_add error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 def create_html_file(metromap_content):
     """Luo staattinen HTML-tiedosto"""
     html_content = f"""<!DOCTYPE html>
@@ -976,7 +1038,7 @@ def create_html_file(metromap_content):
 <head>
     <title>Mermetro</title>
     <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.9/dist/mermaid.esm.min.mjs';
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.esm.min.mjs';
         mermaid.initialize({{ startOnLoad: true, maxTextSize: 10000000000, maxEdges: 500000 }});
     </script>
     <style>
@@ -995,23 +1057,17 @@ def create_html_file(metromap_content):
     with open('data/metrokartta.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Example: "
-        "   python3 mermetro.py data/lokitiedosto.json -m",
-    )
-    parser.add_argument("jsonfile", help="Path to the log JSON file")
-    parser.add_argument("-m", "--multiprocessing", action="store_true", help="Enable multiprocessing for processing")
-    args = parser.parse_args()
-    if not os.path.isfile(args.jsonfile):
-        print(f"Error: File '{args.jsonfile}' not found.\n")
-        parser.print_help()
-        sys.exit(1)
+def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5000):
 
-    global lokitiedosto
-    lokitiedosto = args.jsonfile
+    global lokitiedosto, startup_multiprocessing, excluded_entries
 
-    global excluded_entries
+    if not os.path.isfile(jsonfile):
+        print(f"Error: File '{jsonfile}' not found.")
+        return
+
+    lokitiedosto = jsonfile
+    startup_multiprocessing = bool(multiprocessing)
+
     try:
         common_values_path = os.path.join('data', 'common_values.txt')
         if not os.path.exists(common_values_path):
@@ -1021,25 +1077,17 @@ def main():
     except Exception:
         excluded_entries = []
 
-    print("\nStarting up...")
-    print(f"Time: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
-    process_json_file(use_multiprocessing=args.multiprocessing)
+    process_json_file(use_multiprocessing=startup_multiprocessing)
 
-    with open('data/metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
-        f.write(current_metromap)
-    create_html_file(current_metromap)
-
-    print("\nCreated files to /data:")
-    print("   metrokartta_koodi.txt  -> Mermaid-code")
-    print("   metrokartta.html       -> Static HTML")
-    print("\nAccess:")
-    print("   Live-page: http://localhost:5000")
-    print("   Static file: metrokartta.html\n")
-    
     try:
-        app.run(debug=False, host='127.0.0.1', port=5000)
+        os.makedirs('data', exist_ok=True)
+        with open('data/metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
+            f.write(current_metromap)
+        create_html_file(current_metromap)
+    except Exception as e:
+        print(f"Warning writing output files: {e}")
+
+    try:
+        app.run(debug=False, host=host, port=port)
     except KeyboardInterrupt:
         print("\nStopped by user")
-
-if __name__ == "__main__":
-    main()

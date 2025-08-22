@@ -1,5 +1,6 @@
 data/*
+v2/__pycache__/
+v1/__pycache__/
 !data/README.md
 
-mermetro/metrokartta.html
-mermetro/metrokartta_koodi.txt
+
