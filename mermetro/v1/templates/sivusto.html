@@ -26,7 +26,7 @@
             
             window.currentGroupId = cleanId;
             
-            fetch(`/api/node-details/${cleanId}`)
+            fetch(`/api/v1/node-details/${cleanId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (!data.error) {
@@ -274,7 +274,7 @@
                 normalBtn.disabled = true;
                 mpBtn.disabled = true;
 
-                fetch('/api/reload-metromap', {
+                fetch('/api/v1/reload-metromap', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ 
@@ -310,13 +310,13 @@
 
                 let originalText = addCommonBtn.textContent;
                 try {
-                    const existing = await fetch('/api/technical-entries', { cache: 'no-store' }).then(r => r.json());
+                    const existing = await fetch('/api/v1/technical-entries', { cache: 'no-store' }).then(r => r.json());
                     const willRemove = Array.isArray(existing) && existing.includes(val);
 
                     addCommonBtn.textContent = willRemove ? 'Removing...' : 'Adding...';
                     addCommonBtn.disabled = true;
 
-                    const resp = await fetch('/api/common/add', {
+                    const resp = await fetch('/api/v1/common/add', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                         body: JSON.stringify({ value: val })
@@ -327,7 +327,7 @@
                         else if (resp.action === 'added') alert('Added to common_values.txt');
                         else alert('Updated common_values.txt');
 
-                        const data = await fetch('/api/technical-entries', { cache: 'no-store' }).then(r => r.json());
+                        const data = await fetch('/api/v1/technical-entries', { cache: 'no-store' }).then(r => r.json());
                         checkboxList.innerHTML = data.map(value => 
                             `<div class="checkbox-item">
                                 <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
@@ -404,7 +404,7 @@
                     }
                 }
 
-                const response = await fetch(`/api/metromap?${params.toString()}`);
+                const response = await fetch(`/api/v1/metromap?${params.toString()}`);
                 const data = await response.json();
 
                 if (data.metromap !== currentMetromap) {
@@ -431,7 +431,7 @@
             searchResults.style.display = 'block';
             searchResults.innerHTML = '<div class="search-result">Searching...</div>';
             
-            fetch(`/api/search/${encodeURIComponent(searchTerm)}`)
+            fetch(`/api/v1/search/${encodeURIComponent(searchTerm)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.results?.length > 0) {
@@ -511,7 +511,7 @@
             });
 
             document.getElementById('technicalButton').addEventListener('click', function() {
-                fetch('/api/technical-entries', { cache: 'no-store' })
+                fetch('/api/v1/technical-entries', { cache: 'no-store' })
                     .then(r => r.json())
                     .then(data => showTechnicalModal(data))
                     .catch(error => console.error('Error:', error));
