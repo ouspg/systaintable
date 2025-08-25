@@ -1,6 +1,4 @@
-data/*
-v2/__pycache__/
 v1/__pycache__/
+v2/__pycache__/
+data/*
 !data/README.md
-
-

@@ -4,19 +4,24 @@ import os
 from datetime import datetime
 from flask import Flask, render_template, jsonify, send_from_directory, request
 from multiprocessing import Pool, cpu_count
+import re
+import string
 
 app = Flask(__name__)
 
 PERSONAL_TYPES = {'IP', 'MAC', 'Username', 'Email', 'Hostname', 'URL', 'DNSname', 'TTY'}
-TECHNICAL_TYPES = {'Example', 'Example2'}
+FILTERED_TYPES = {'Example', 'Example2'}
 
 current_metromap = ""
 node_details = {}
 group_merge_log = {}
 excluded_entries = []
 startup_multiprocessing = False
-lokitiedosto = None  # Global to store path passed from unified launcher
+lokitiedosto = None
 
+ALLOWED_CHARS = string.ascii_letters + string.digits + '_'
+CLEAN_REGEX = re.compile(f"[^{re.escape(ALLOWED_CHARS)}]")
+UNDERSCORE_REGEX = re.compile('_+')
 
 def parse_timestamp_to_datetime(timestamp_str):
     """
@@ -55,18 +60,10 @@ def parse_identities(entry):
             display_url = entry_value
         
         display_url = display_url.replace('@', '_AT_').replace('[', '_')
-        url_id = entry_value.replace("://", "_").replace("/", "_").replace("?","_").replace("~","_").replace("&","_").replace("=","_").replace("#","_").replace("%","_")
+        url_id = UNDERSCORE_REGEX.sub('_', CLEAN_REGEX.sub('_', entry_value))
         identities.append(f'URL_{url_id}([URL<br/>{display_url}])')
     else:
-        replacements = {
-            " ": "_", "@": "_AT_", "%": "_", ":": "_", "[": "_", "]": "_",
-            ".": "_", "=": "_", "/": "_", "?": "_", "(": "_", ")": "_",
-            "~": "_", "&": "_", "#": "_"
-        }
-        
-        clean_value = entry_value
-        for old, new in replacements.items():
-            clean_value = clean_value.replace(old, new)
+        clean_value = UNDERSCORE_REGEX.sub('_', CLEAN_REGEX.sub('_', entry_value))
         display_value = entry_value.replace('@', '_AT_').replace('[', '_')
 
         type_mapping = {
@@ -89,10 +86,10 @@ def parse_identities(entry):
 def _process_line_chunk(chunk_data):
     """Funktio prosessoirin"""
     if len(chunk_data) == 5:
-        chunk_lines, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries = chunk_data
+        chunk_lines, PERSONAL_TYPES, process_filtered_types, common_entries, used_excluded_entries = chunk_data
     else:
-        chunk_lines, PERSONAL_TYPES, TECHNICAL_TYPES = chunk_data
-        process_technical_types = TECHNICAL_TYPES
+        chunk_lines, PERSONAL_TYPES, FILTERED_TYPES = chunk_data
+        process_filtered_types = FILTERED_TYPES
         used_excluded_entries = []
         
         try:
@@ -110,12 +107,12 @@ def _process_line_chunk(chunk_data):
     local_node_timestamps = {}
     local_node_counts = {}
     local_node_entries = {}
-    local_technical_data = {}
+    local_filtered_data = {}
     
     for line_num, entries in chunk_lines:
         # Käsitellään entry-tasolla sen mukaan onko arvo suodatettu.
         all_line_ids = []
-        line_technical_data = []
+        line_filtered_data = []
 
         def add_identity(entry, entry_type, entry_value):
             identities = parse_identities(entry)
@@ -151,21 +148,21 @@ def _process_line_chunk(chunk_data):
                 continue
             
             is_common = bool(common_entries) and entry_value in common_entries
-            is_technical = bool(process_technical_types) and entry_type in process_technical_types
+            is_filtered = bool(process_filtered_types) and entry_type in process_filtered_types
             is_excluded_value = bool(used_excluded_entries) and entry_value in used_excluded_entries
             is_excluded_type = bool(used_excluded_entries) and entry_type in used_excluded_entries
 
             if is_excluded_value or is_excluded_type:
-                tech_entry = {
+                filtered_entry = {
                     'type': entry_type,
                     'value': entry_value,
                     'timestamp': entry.get('timestamp', 'N/A'),
                     'line': line_num,
                 }
-                line_technical_data.append(tech_entry)
+                line_filtered_data.append(filtered_entry)
                 continue
 
-            if is_common or is_technical:
+            if is_common or is_filtered:
                 add_identity(entry, entry_type, entry_value)
                 continue
 
@@ -173,30 +170,30 @@ def _process_line_chunk(chunk_data):
                 add_identity(entry, entry_type, entry_value)
                 continue
 
-            tech_entry = {
+            filtered_entry = {
                 'type': entry_type,
                 'value': entry_value,
                 'timestamp': entry.get('timestamp', 'N/A'),
                 'line': line_num,
             }
-            line_technical_data.append(tech_entry)
-        
+            line_filtered_data.append(filtered_entry)
+
         # Yhdistä tekniset tiedot
-        if all_line_ids and line_technical_data:
+        if all_line_ids and line_filtered_data:
             for node_id in all_line_ids:
                 node_key = node_id.split('(')[0]
-                if node_key not in local_technical_data:
-                    local_technical_data[node_key] = []
-                local_technical_data[node_key].extend(line_technical_data)
-        
+                if node_key not in local_filtered_data:
+                    local_filtered_data[node_key] = []
+                local_filtered_data[node_key].extend(line_filtered_data)
+
         # Tärkeä connections
         if all_line_ids:
             local_nodes.update(all_line_ids)
             for i in range(len(all_line_ids)):
                 for j in range(i+1, len(all_line_ids)):
                     local_connections.add((all_line_ids[i], all_line_ids[j]))
-    
-    return local_connections, local_nodes, local_node_timestamps, local_node_counts, local_node_entries, local_technical_data
+
+    return local_connections, local_nodes, local_node_timestamps, local_node_counts, local_node_entries, local_filtered_data
 
 def group_by_person(connections):
     """
@@ -482,7 +479,7 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
     node_timestamps = {}
     node_counts = {}
     node_entries = {}
-    technical_data = {}
+    filtered_data = {}
 
     def _entry_in_time(e):
         if not (start_time or end_time):
@@ -546,27 +543,27 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
         if use_multiprocessing:
             print(f"Using multiprocessing with {cpu_count()} cores. This may take a while...")
             chunk_size = max(1, len(line_items) // cpu_count())
-            process_technical_types = TECHNICAL_TYPES.copy()
+            process_filtered_types = FILTERED_TYPES.copy()
             if used_excluded_entries:
-                process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
+                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_excluded_entries}
 
             chunks = []
             for i in range(0, len(line_items), chunk_size):
                 chunk = line_items[i:i + chunk_size]
-                chunks.append((chunk, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries))
+                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, common_entries, used_excluded_entries))
             with Pool(processes=cpu_count()) as pool:
                 results = pool.map(_process_line_chunk, chunks)
         else:
             print("Processing without multiprocessing...")
-            process_technical_types = TECHNICAL_TYPES.copy()
+            process_filtered_types = FILTERED_TYPES.copy()
             if used_excluded_entries:
-                process_technical_types = {t for t in TECHNICAL_TYPES if t not in used_excluded_entries}
-            chunks = [(line_items, PERSONAL_TYPES, process_technical_types, common_entries, used_excluded_entries)]
+                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_excluded_entries}
+            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, common_entries, used_excluded_entries)]
             results = []
             for chunk in chunks:
                 results.append(_process_line_chunk(chunk))
-        
-        for chunk_connections, chunk_nodes, chunk_timestamps, chunk_counts, chunk_entries, chunk_technical in results:
+
+        for chunk_connections, chunk_nodes, chunk_timestamps, chunk_counts, chunk_entries, chunk_filtered in results:
             connections_set.update(chunk_connections)
             all_nodes.update(chunk_nodes)
             
@@ -582,11 +579,11 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
                 if node_key not in node_entries:
                     node_entries[node_key] = []
                 node_entries[node_key].extend(entry_list)
-                
-            for node_key, tech_list in chunk_technical.items():
-                if node_key not in technical_data:
-                    technical_data[node_key] = []
-                technical_data[node_key].extend(tech_list)
+
+            for node_key, filtered_list in chunk_filtered.items():
+                if node_key not in filtered_data:
+                    filtered_data[node_key] = []
+                filtered_data[node_key].extend(filtered_list)
 
         connections = list(connections_set)
         
@@ -598,7 +595,7 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             timestamps = node_timestamps.get(node_key, ['N/A'])
             count = node_counts.get(node_key, 0)
             entries = node_entries.get(node_key, [])
-            tech_entries = technical_data.get(node_key, [])
+            filtered_entries = filtered_data.get(node_key, [])
 
             valid_timestamps = []
             for ts in timestamps:
@@ -618,9 +615,9 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
                     'first_seen': first_time,
                     'last_seen': last_time,
                     'entries': sorted(entries, key=lambda x: x['timestamp']),
-                    'technical_entries': sorted(tech_entries, key=lambda x: x['timestamp'])
-                }   
-                
+                    'filtered_entries': sorted(filtered_entries, key=lambda x: x['timestamp'])
+                }
+
                 if first_time == last_time:
                     info = f"<br/>Time: {first_time}<br/>Count: {count}"
                 else:
@@ -633,7 +630,7 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
                     'first_seen': 'N/A',
                     'last_seen': 'N/A',
                     'entries': entries,
-                    'technical_entries': tech_entries
+                    'filtered_entries': filtered_entries
                 }
                 info = f"<br/>Time: N/A<br/>Count: {count}"
             
@@ -666,23 +663,23 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             group_id = f"ID_{group_num + 1}"
             
             all_entries = []
-            all_technical_entries = []
+            all_filtered_entries = []
             all_timestamps = []
             
             for node in group:
                 node_key = node.split('(')[0]
                 if node_key in local_node_details:
                     all_entries.extend(local_node_details[node_key]['entries'])
-                    all_technical_entries.extend(local_node_details[node_key]['technical_entries'])
-                    
+                    all_filtered_entries.extend(local_node_details[node_key]['filtered_entries'])
+
                     for entry in local_node_details[node_key]['entries']:
                         dt = parse_timestamp_to_datetime(entry['timestamp'])
                         if dt:
                             all_timestamps.append(dt)
             
             all_entries.sort(key=lambda x: x['line'])
-            all_technical_entries.sort(key=lambda x: x['line'])
-            
+            all_filtered_entries.sort(key=lambda x: x['line'])
+
             if all_timestamps:
                 all_timestamps.sort()
                 first_time = all_entries[0]['timestamp'] if all_entries else 'N/A'
@@ -694,11 +691,11 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             local_node_details[group_id] = {
                 'type': 'Group',
                 'value': f"{len(group)} entries",
-                'count': len(all_entries) + len(all_technical_entries),
+                'count': len(all_entries) + len(all_filtered_entries),
                 'first_seen': first_time,
                 'last_seen': last_time,
                 'entries': all_entries,
-                'technical_entries': all_technical_entries,
+                'filtered_entries': all_filtered_entries,
                 'group_nodes': list(group),
                 'merge_log': group_merge_log.get(group_id, [])
             }
@@ -854,8 +851,8 @@ def api_search(search_term):
                     found_in_entries = True
                     break
 
-        if not found_in_entries and 'technical_entries' in details:
-            for entry in details['technical_entries']:
+        if not found_in_entries and 'filtered_entries' in details:
+            for entry in details['filtered_entries']:
                 match_found = False
                 
                 # formatted_time jätetään jos halutaan lisätä se switch, (iso tai finnish time)
@@ -875,20 +872,20 @@ def api_search(search_term):
                 if match_found:
                     if is_timestamp_search:
                         if '.' in clean_search_term and ':' in clean_search_term:
-                            display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Full timestamp match: {entry_time} (technical entry))"
+                            display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Full timestamp match: {entry_time} (filtered entry))"
                         elif '.' in clean_search_term and ':' not in clean_search_term:
-                            display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Date match: {entry_time} (technical entry))"
+                            display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Date match: {entry_time} (filtered entry))"
                         elif ':' in clean_search_term and '.' not in clean_search_term:
-                            display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Time match: {entry_time} (technical entry))"
+                            display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Time match: {entry_time} (filtered entry))"
                     elif is_combined_search:
-                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {text_part} at {time_part} in technical)"
+                        display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (Combined match: {text_part} at {time_part} in filtered)"
                     else:
                         display_text = f"{details.get('type', 'Unknown')}: {details.get('value', 'Unknown')} (found in filtered entries)"
                     
                     results.append({
                         'node_id': node_id,
                         'display_text': display_text,
-                        'match_type': 'technical'
+                        'match_type': 'filtered'
                     })
                     break
     
@@ -903,20 +900,18 @@ def api_search(search_term):
     
     return jsonify({'results': unique_results})
 
-
-
 @app.route('/favicon.ico')
 def favicon():
     """Pikku ikoni välilehdessä"""
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
-@app.route('/api/v1/technical-entries')
-def api_technical_entries():
-    """API teknisten ja yleisten entryjen hakuun"""
+@app.route('/api/v1/filtered-entries')
+def api_filtered_entries():
+    """API suodattamien entryjen hakuun"""
     global excluded_entries
-    technical_values = set()
-    
+    filtered_values = set()
+
     try:
         common_values_path = os.path.join('data', 'common_values.txt')
         if not os.path.exists(common_values_path):
@@ -926,25 +921,25 @@ def api_technical_entries():
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
-                    technical_values.add(line)
+                    filtered_values.add(line)
     except FileNotFoundError:
         pass
     
     for node_id, details in node_details.items():
         if details.get('type') != 'Group':
-            if 'technical_entries' in details:
-                for entry in details['technical_entries']:
-                    technical_values.add(entry.get('value', 'Unknown'))
-            
+            if 'filtered_entries' in details:
+                for entry in details['filtered_entries']:
+                    filtered_values.add(entry.get('value', 'Unknown'))
+
             if 'entries' in details:
                 for entry in details['entries']:
                     entry_value = entry.get('value', '')
                     entry_type = entry.get('type', '')
                     
-                    if entry_type in TECHNICAL_TYPES:
-                        technical_values.add(entry_value)
-    
-    return jsonify(sorted(list(technical_values)))
+                    if entry_type in FILTERED_TYPES:
+                        filtered_values.add(entry_value)
+
+    return jsonify(sorted(list(filtered_values)))
 
 @app.route('/api/v1/reload-metromap', methods=['POST'])
 def reload_metromap():
@@ -1031,32 +1026,6 @@ def api_add_common_entry():
         print(f"api_common_add error: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
-def create_html_file(metromap_content):
-    """Luo staattinen HTML-tiedosto"""
-    html_content = f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>Mermetro</title>
-    <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({{ startOnLoad: true, maxTextSize: 10000000000, maxEdges: 500000 }});
-    </script>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
-        .mermaid {{ text-align: center; background-color: white; padding: 20px; border-radius: 10px; }}
-    </style>
-</head>
-<body>
-    <h1>Mermetro</h1>
-    <div class="mermaid">
-{metromap_content}
-    </div>
-</body>
-</html>"""
-    
-    with open('data/metrokartta.html', 'w', encoding='utf-8') as f:
-        f.write(html_content)
-
 def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5000):
 
     global lokitiedosto, startup_multiprocessing, excluded_entries
@@ -1083,7 +1052,6 @@ def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5000):
         os.makedirs('data', exist_ok=True)
         with open('data/metrokartta_koodi.txt', 'w', encoding='utf-8') as f:
             f.write(current_metromap)
-        create_html_file(current_metromap)
     except Exception as e:
         print(f"Warning writing output files: {e}")
 

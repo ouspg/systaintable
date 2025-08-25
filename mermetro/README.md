@@ -64,10 +64,15 @@ pip install -r requirements.txt
 
 Below is an exaple how to properly run `start.py`. It can take several minutes to complete with larger files.
 Flags:
+
     -m  Multiprocessing
+
     --mode 
+
         0 = Both (default)
+
         1 = Only v1
+
         2 = Only v2
 
 ```console
@@ -75,6 +80,8 @@ python3 start.py data/lokitiedosto.json -m --mode 2
 ```
 
 Open http://localhost:5000
+AND/OR
+http://localhost:5001
 
 ### OSX venv
 
