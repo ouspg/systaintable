@@ -88,11 +88,11 @@ http://localhost:5001
 2. Activate the virtual environment
 ```source venv/bin/activate```
 
-3. Install pytz (and any other dependencies)
+3. Install flask (and any other dependencies)
 ```pip install flask```
 
 4. Run mermetro
-```python mermetro.py```
+```python start.py```
 
 5. To deactivate the virtual environment when done:
 ```deactivate```
