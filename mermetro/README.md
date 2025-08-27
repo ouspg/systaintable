@@ -42,6 +42,7 @@ mermetro/
 │   ├── mermetro2.py
 │   ├── nodes.py
 │   ├── formation.py
+│   ├── timeline.py
 ├── data/
 │   ├── common_values.txt
 │   ├── README.md
@@ -67,16 +68,12 @@ Flags:
 
     -m  Multiprocessing
 
-    --mode 
+    -v1 only v1
 
-        0 = Both (default)
-
-        1 = Only v1
-
-        2 = Only v2
+    -v2 only v2
 
 ```console
-python3 start.py data/lokitiedosto.json -m --mode 2
+python3 start.py data/lokitiedosto.json -m -v1
 ```
 
 Open http://localhost:5000

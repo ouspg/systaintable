@@ -24,8 +24,13 @@ def main():
         description="Example: python start.py data/lokitiedosto.json --mode 2 -m"
     )
     parser.add_argument("jsonfile", help="Path to the JSON log file")
-    parser.add_argument("--mode", type=int, default=0, choices=[0,1,2],
-                        help="0=both, 1=only v1, 2=only v2 (default 0)")
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-v1", "--v1", action="store_true", dest="only_v1",
+                       help="Run only v1 (do not start v2)")
+    group.add_argument("-v2", "--v2", action="store_true", dest="only_v2",
+                       help="Run only v2 (do not start v1)")
+
     parser.add_argument("-m", "--multiprocessing", action="store_true",
                         help="Enables multiprocessing")
     args = parser.parse_args()
@@ -36,18 +41,34 @@ def main():
 
     print("\nStarting up...")
     print(f" JSON: {args.jsonfile}")
-    print(f" Mode: {args.mode}")
+
+    if args.only_v1:
+        mode_str = "only v1"
+    elif args.only_v2:
+        mode_str = "only v2"
+    else:
+        mode_str = "both v1 and v2"
+    print(f" Mode: {mode_str}")
     print(f" Multiprocessing: {bool(args.multiprocessing)}")
 
     processes = []
 
-    if args.mode in (0,1):
+    if args.only_v1:
+        p1 = Process(target=run_v1, args=(args.jsonfile, args.multiprocessing))
+        p1.start()
+        processes.append(("v1", p1))
+        print(" v1: http://localhost:5000")
+    elif args.only_v2:
+        p2 = Process(target=run_v2, args=(args.jsonfile, args.multiprocessing))
+        p2.start()
+        processes.append(("v2", p2))
+        print(" v2: http://localhost:5001")
+    else:
         p1 = Process(target=run_v1, args=(args.jsonfile, args.multiprocessing))
         p1.start()
         processes.append(("v1", p1))
         print(" v1: http://localhost:5000")
 
-    if args.mode in (0,2):
         p2 = Process(target=run_v2, args=(args.jsonfile, args.multiprocessing))
         p2.start()
         processes.append(("v2", p2))

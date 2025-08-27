@@ -7,7 +7,7 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify, send_from_directory, request
 from multiprocessing import Pool, cpu_count
 
-from . import formation, nodes
+from . import formation, nodes, timeline
 
 app = Flask(__name__)
 
@@ -421,6 +421,43 @@ def api_timeline():
         'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
+@app.route('/api/v2/timeline-heatmap/<group_id>')
+def api_timeline_heatmap(group_id=None):
+    try:
+        heatmap_data = timeline.analyze_group_timeline_heatmap(group_id, node_details)
+            
+        if not heatmap_data:
+            error_msg = f'No timeline data available for group {group_id}' if group_id else 'No timeline data available'
+            return jsonify({'error': error_msg}), 404
+            
+        segments = timeline.generate_heatmap_segments(heatmap_data, segments=200)
+        statistics = timeline.get_heatmap_statistics(heatmap_data)
+        
+        return jsonify({
+            'success': True,
+            'group_id': group_id,
+            'min_timestamp': heatmap_data['min_timestamp'].isoformat(),
+            'max_timestamp': heatmap_data['max_timestamp'].isoformat(),
+            'total_entries': heatmap_data['total_entries'],
+            'duration_days': heatmap_data['duration_days'],
+            'duration_hours': round(heatmap_data['duration_hours'], 2),
+            'segments': [
+                {
+                    'start': seg['start'].isoformat(),
+                    'end': seg['end'].isoformat(),
+                    'count': seg['count'],
+                    'percentage': seg['percentage'],
+                    'dominant_type': seg['dominant_type'],
+                    'activity_level': seg['activity_level']
+                }
+                for seg in segments
+            ],
+            'statistics': statistics
+        })
+    except Exception as e:
+        print(f"Heatmap API error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 @app.route('/api/v2/timestampfilter')
 def api_metromap():
     """API metrokartan hakuun (timestamp filtering)"""
@@ -562,7 +599,7 @@ def api_visualization(viz_type, group_id):
 
 @app.route('/api/v2/filtered-entries')
 def api_filtered_entries():
-    """API teknisten ja yleisten entryjen hakuun"""
+    """filtered entries"""
     global excluded_entries
     filtered_values = set()
     
@@ -673,6 +710,46 @@ def api_add_common_entry():
     except Exception as e:
         print(f"api_common_add error: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/v2/heatmap-entries/<group_id>')
+def api_heatmap_entries(group_id):
+    """API heatmap-segmentin entryjen hakemiseen"""
+    try:
+        start_time_str = request.args.get('start')
+        end_time_str = request.args.get('end')
+        
+        if not start_time_str or not end_time_str:
+            return jsonify({'error': 'Missing start or end time parameters'}), 400
+            
+        try:
+            start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+            end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
+        except ValueError:
+            return jsonify({'error': 'Invalid time format'}), 400
+        
+        group_entries = node_details[group_id].get('entries', [])
+        filtered_entries = []
+        
+        for entry in group_entries:
+            timestamp_str = entry.get('timestamp', 'N/A')
+            if timestamp_str == 'N/A':
+                continue
+                
+            entry_time = parse_timestamp_to_datetime(timestamp_str)
+            if entry_time and start_time <= entry_time < end_time:
+                filtered_entries.append(entry)
+        
+        return jsonify({
+            'success': True,
+            'group_id': group_id,
+            'start_time': start_time_str,
+            'end_time': end_time_str,
+            'entries': filtered_entries,
+            'count': len(filtered_entries)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5001):
 
