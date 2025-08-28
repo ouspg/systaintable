@@ -1,3 +1,6 @@
+import re
+import string
+
 def get_node_value(node_key, node_details):
     """Hakee noden arvon node_details"""
     if node_key in node_details:
@@ -9,12 +12,10 @@ def get_node_value(node_key, node_details):
 
 def clean_value_for_mermaid(value):
     """Puhdistaa arvon Mermaid-kaaviota varten"""
-    import re
     clean_value = str(value)
     
-    clean_value = re.sub(r'[^a-zA-Z0-9_]', '_', clean_value)
-    
-    clean_value = re.sub(r'_+', '_', clean_value)
+    ALLOWED_CHARS = string.ascii_letters + string.digits + '_'
+    clean_value = re.sub('_+', '_', re.sub(f"[^{re.escape(ALLOWED_CHARS)}]", '_', clean_value))
     
     clean_value = clean_value.strip('_')
     

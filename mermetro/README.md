@@ -42,6 +42,7 @@ mermetro/
 │   ├── mermetro2.py
 │   ├── nodes.py
 │   ├── formation.py
+│   ├── timeline.py
 ├── data/
 │   ├── common_values.txt
 │   ├── README.md
@@ -64,17 +65,20 @@ pip install -r requirements.txt
 
 Below is an exaple how to properly run `start.py`. It can take several minutes to complete with larger files.
 Flags:
+
     -m  Multiprocessing
-    --mode 
-        0 = Both (default)
-        1 = Only v1
-        2 = Only v2
+
+    -v1 only v1
+
+    -v2 only v2
 
 ```console
-python3 start.py data/lokitiedosto.json -m --mode 2
+python3 start.py data/lokitiedosto.json -m -v1
 ```
 
 Open http://localhost:5000
+AND/OR
+http://localhost:5001
 
 ### OSX venv
 
@@ -84,11 +88,11 @@ Open http://localhost:5000
 2. Activate the virtual environment
 ```source venv/bin/activate```
 
-3. Install pytz (and any other dependencies)
+3. Install flask (and any other dependencies)
 ```pip install flask```
 
 4. Run mermetro
-```python mermetro.py```
+```python start.py```
 
 5. To deactivate the virtual environment when done:
 ```deactivate```

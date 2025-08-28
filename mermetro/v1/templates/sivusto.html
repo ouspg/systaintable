@@ -52,9 +52,9 @@
             modalTitle.textContent = `ID: ${groupNumber}`;
             
             const personalCount = nodeData.entries?.length || 0;
-            const technicalCount = nodeData.technical_entries?.length || 0;
-            const totalCount = personalCount + technicalCount;
-            
+            const filteredCount = nodeData.filtered_entries?.length || 0;
+            const totalCount = personalCount + filteredCount;
+
             const uniqueValues = nodeData.entries ? 
                 [...new Set(nodeData.entries.map(entry => entry.value))] : [];
             
@@ -90,9 +90,9 @@
             }
             
             content += createEntriesTable(nodeData.entries, 'Every unique entry:', 'When has this exact entry appeared in the log file?');
-            
-            if (nodeData.technical_entries?.length > 0) {
-                content += createTechnicalTable(nodeData.technical_entries);
+
+            if (nodeData.filtered_entries?.length > 0) {
+                content += createFilteredTable(nodeData.filtered_entries);
             }
             
             modalContent.innerHTML = content;
@@ -102,9 +102,9 @@
             modalTitle.textContent = `${nodeData.type}: ${nodeData.value}`;
             
             const personalCount = nodeData.entries?.length || 0;
-            const technicalCount = nodeData.technical_entries?.length || 0;
-            const totalCount = personalCount + technicalCount;
-            
+            const filteredCount = nodeData.filtered_entries?.length || 0;
+            const totalCount = personalCount + filteredCount;
+
             let content = `
                 <div class="detail-section">
                     <p><strong>Count:</strong> ${totalCount}</p>
@@ -114,9 +114,9 @@
             `;
             
             content += createEntriesTable(nodeData.entries, 'Unique entries:', 'When has this exact entry appeared in the log file?');
-            
-            if (nodeData.technical_entries?.length > 0) {
-                content += createTechnicalTable(nodeData.technical_entries);
+
+            if (nodeData.filtered_entries?.length > 0) {
+                content += createFilteredTable(nodeData.filtered_entries);
             }
             
             modalContent.innerHTML = content;
@@ -150,22 +150,22 @@
                 </div>
             `;
         }
-        
-        function createTechnicalTable(technicalEntries) {
+
+        function createFilteredTable(filteredEntries) {
             return `
-                <div class="detail-section technical-section">
+                <div class="detail-section filtered-section">
                     <p><strong>Filtered entries</strong>
                         <span class="info-tooltip">
                             ?
                             <span class="tooltip-text">These entries appeared with the entry above, but have been filtered out to keep metromap readable</span>
                         </span>
                     </p>
-                    <table class="entries-table technical-table">
+                    <table class="entries-table filtered-table">
                         <thead>
                             <tr><th>#</th><th>Line</th><th>Time</th><th>Type</th><th>Value</th></tr>
                         </thead>
                         <tbody>
-                            ${technicalEntries.map((entry, index) => `
+                            ${filteredEntries.map((entry, index) => `
                                 <tr>
                                     <td><strong>${index + 1}</strong></td>
                                     <td><strong>${entry.line}</strong></td>
@@ -180,7 +180,7 @@
             `;
         }
 
-        function showTechnicalModal(technicalData) {
+        function showFilteredModal(filteredData) {
             modalTitle.textContent = 'Filtered Entries';
 
             const storageKey = 'mermetro_excludedEntries_v1';
@@ -192,8 +192,8 @@
                 console.warn('Failed to read saved excluded entries', e);
             }
 
-            const nodeListHtml = technicalData.length > 0 ? 
-                technicalData.map(value => 
+            const nodeListHtml = filteredData.length > 0 ? 
+                filteredData.map(value => 
                     `<div class="checkbox-item">
                         <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
                             class="entry-checkbox" value="${value}">
@@ -203,7 +203,7 @@
 
             modalContent.innerHTML = `
                 <div class="detail-section">
-                    <p><strong>Total unique values:</strong> ${technicalData.length}</p>
+                    <p><strong>Total unique values:</strong> ${filteredData.length}</p>
 
                     <div style="margin:10px 0;">
                         <input id="newCommonValue" type="text" placeholder="Remove / Add value to common_values.txt" 
@@ -310,7 +310,7 @@
 
                 let originalText = addCommonBtn.textContent;
                 try {
-                    const existing = await fetch('/api/v1/technical-entries', { cache: 'no-store' }).then(r => r.json());
+                    const existing = await fetch('/api/v1/filtered-entries', { cache: 'no-store' }).then(r => r.json());
                     const willRemove = Array.isArray(existing) && existing.includes(val);
 
                     addCommonBtn.textContent = willRemove ? 'Removing...' : 'Adding...';
@@ -327,7 +327,7 @@
                         else if (resp.action === 'added') alert('Added to common_values.txt');
                         else alert('Updated common_values.txt');
 
-                        const data = await fetch('/api/v1/technical-entries', { cache: 'no-store' }).then(r => r.json());
+                        const data = await fetch('/api/v1/filtered-entries', { cache: 'no-store' }).then(r => r.json());
                         checkboxList.innerHTML = data.map(value => 
                             `<div class="checkbox-item">
                                 <input type="checkbox" id="entry_${value.replace(/[^a-zA-Z0-9]/g, '_')}" 
@@ -510,10 +510,10 @@
                 }
             });
 
-            document.getElementById('technicalButton').addEventListener('click', function() {
-                fetch('/api/v1/technical-entries', { cache: 'no-store' })
+            document.getElementById('filteredButton').addEventListener('click', function() {
+                fetch('/api/v1/filtered-entries', { cache: 'no-store' })
                     .then(r => r.json())
-                    .then(data => showTechnicalModal(data))
+                    .then(data => showFilteredModal(data))
                     .catch(error => console.error('Error:', error));
             });
             
@@ -624,12 +624,12 @@
             background-color: #1976D2;
         }
 
-        #technicalButton {
+        #filteredButton {
             background-color: #FF9800;
             margin-left: auto;
         }
-        
-        #technicalButton:hover {
+
+        #filteredButton:hover {
             background-color: #F57C00;
         }
         
@@ -821,35 +821,35 @@
             max-width: 200px;
         }
         
-        .technical-section { 
+        .filtered-section { 
             margin-top: 20px; 
             padding-top: 15px; 
         }
         
-        .technical-section p { 
+        .filtered-section p { 
             border-bottom: 2px solid #FF9800; 
             padding-bottom: 10px; 
             margin-bottom: 15px;
             word-wrap: break-word;
         }
         
-        .technical-table th { 
+        .filtered-table th { 
             background-color: #FF9800; 
             color: white; 
         }
         
-        .technical-table th:first-child { 
+        .filtered-table th:first-child { 
             background-color: #F57C00; 
         }
         
-        .technical-table td:first-child, 
-        .technical-table td:nth-child(2) { 
+        .filtered-table td:first-child, 
+        .filtered-table td:nth-child(2) { 
             text-align: center; 
             font-weight: bold; 
             color: #F57C00; 
         }
         
-        .technical-table tr:hover { 
+        .filtered-table tr:hover { 
             background-color: #fff3e0; 
         }
         
@@ -1008,7 +1008,7 @@
                     For timestamp search, add "" e.g. "12-16"
                 For combined search, use 8.8.8.8 "12-16"</span>
             </span>
-            <button id="technicalButton">Filtered Entries</button>
+            <button id="filteredButton">Filtered Entries</button>
             <div id="searchResults" aria-live="polite"></div>
         </div>
         
