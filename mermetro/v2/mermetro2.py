@@ -513,16 +513,51 @@ def api_select_group(group_id):
     """API ryhmän valintaan"""
     global selected_group_id, current_timeline
     
-    if group_id in available_groups:
-        selected_group_id = group_id
+    if group_id not in available_groups:
+        return jsonify({'success': False, 'error': 'Group not found'}), 404
+    
+    selected_group_id = group_id
+    
+    if startup_multiprocessing:
+        try:
+            tasks = [
+                ('formation', group_id, node_details),
+                ('nodes', group_id, node_details),
+                ('heatmap', group_id, node_details)
+            ]
+            
+            with Pool(processes=3) as pool:
+                results = pool.map(_parallel_worker, tasks)
+            
+            response_data = {'success': True, 'selected_group': selected_group_id, 'multiprocessing': True}
+            
+            for viz_type, result in results:
+                if viz_type == 'formation' and result:
+                    current_timeline = result
+                    response_data['timeline'] = result
+                elif viz_type == 'nodes' and result:
+                    response_data['nodes_content'] = result
+                elif viz_type == 'heatmap' and result:
+                    response_data['heatmap_data'] = result
+            
+            return jsonify(response_data)
+        except Exception as e:
+            print(f"Multiprocessing error: {e}")
+            current_timeline = formation.generate_timeline_content(group_id, node_details)
+            return jsonify({
+                'success': True, 
+                'selected_group': selected_group_id,
+                'timeline': current_timeline,
+                'multiprocessing': False
+            })
+    else:
         current_timeline = formation.generate_timeline_content(group_id, node_details)
         return jsonify({
             'success': True, 
             'selected_group': selected_group_id,
-            'timeline': current_timeline
+            'timeline': current_timeline,
+            'multiprocessing': False
         })
-    else:
-        return jsonify({'success': False, 'error': 'Group not found'}), 404
 
 @app.route('/api/v2/node-details/<node_id>')
 def api_node_details(node_id):
@@ -777,3 +812,42 @@ def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5001):
         app.run(debug=False, host=host, port=port)
     except KeyboardInterrupt:
         print("\nStopped by user")
+
+def _parallel_worker(args):
+    """Worker function for parallel processing"""
+    viz_type, group_id, node_details_copy = args
+    
+    if viz_type == 'formation':
+        return ('formation', formation.generate_timeline_content(group_id, node_details_copy))
+    elif viz_type == 'nodes':
+        return ('nodes', nodes.generate_nodes_content(group_id, node_details_copy))
+    elif viz_type == 'heatmap':
+        heatmap_data = timeline.analyze_group_timeline_heatmap(group_id, node_details_copy)
+        if heatmap_data:
+            segments = timeline.generate_heatmap_segments(heatmap_data, segments=200)
+            statistics = timeline.get_heatmap_statistics(heatmap_data)
+            
+            result = {
+                'group_id': heatmap_data['group_id'],
+                'min_timestamp': heatmap_data['min_timestamp'].isoformat(),
+                'max_timestamp': heatmap_data['max_timestamp'].isoformat(),
+                'total_entries': heatmap_data['total_entries'],
+                'duration_days': heatmap_data['duration_days'],
+                'duration_hours': round(heatmap_data['duration_hours'], 2),
+                'segments': [
+                    {
+                        'start': seg['start'].isoformat(),
+                        'end': seg['end'].isoformat(),
+                        'count': seg['count'],
+                        'percentage': seg['percentage'],
+                        'dominant_type': seg['dominant_type'],
+                        'activity_level': seg['activity_level']
+                    }
+                    for seg in segments
+                ],
+                'statistics': statistics
+            }
+            return ('heatmap', result)
+        return ('heatmap', None)
+    
+    return (viz_type, None)

@@ -224,7 +224,6 @@
                     </div>
                     <div class="reload-container">
                         <button id="reloadMapButton" class="reload-button">Process</button>
-                        <button id="reloadMapMPButton" class="reload-button">Process (MP)</button>
                     </div>
                 </div>
             `;
@@ -264,22 +263,19 @@
                 deselectAllBtn.click();
             }
 
-            function performReload(multiprocessing) {
+            function performReload() {
                 const normalBtn = document.getElementById('reloadMapButton');
-                const mpBtn = document.getElementById('reloadMapMPButton');
-                const activeBtn = multiprocessing ? mpBtn : normalBtn;
+                const activeBtn = normalBtn;
 
                 const originalText = activeBtn.textContent;
                 activeBtn.textContent = 'Processing...';
                 normalBtn.disabled = true;
-                mpBtn.disabled = true;
 
                 fetch('/api/v1/reload-metromap', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ 
-                        excludedEntries: excludedEntries,
-                        multiprocessing: multiprocessing 
+                        excludedEntries: excludedEntries
                     }),
                     cache: 'no-store'
                 })
@@ -295,12 +291,10 @@
                 .finally(() => {
                     activeBtn.textContent = originalText;
                     normalBtn.disabled = false;
-                    mpBtn.disabled = false;
                 });
             }
 
-            document.getElementById('reloadMapButton').onclick = function() { performReload(false); };
-            document.getElementById('reloadMapMPButton').onclick = function() { performReload(true); };
+            document.getElementById('reloadMapButton').onclick = function() { performReload(); };
 
             const addCommonBtn = document.getElementById('addCommonButton');
             addCommonBtn.onclick = async function() {
@@ -575,423 +569,74 @@
         .mermaid { text-align: center; background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1 { color: #333; text-align: center; }
         .info { background-color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        
-        .search-container {
-            margin-top: 15px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
-            position: relative;
-        }
-        
-        .search-container input[type="text"] {
-            flex: 1;
-            min-width: 250px;
-            max-width: 400px;
-            padding: 8px 12px;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
-            font-family: inherit;
-        }
-        
-        .search-container input[type="text"]:focus {
-            outline: none;
-            border-color: #2196F3;
-        }
-        
-        .search-container button {
-            padding: 8px 16px;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 14px;
-            cursor: pointer;
-            font-family: inherit;
-            font-weight: bold;
-        }
-        
-        .search-container button:hover {
-            opacity: 0.9;
-        }
-        
-        #searchButton {
-            background-color: #2196F3;
-        }
-        
-        #searchButton:hover {
-            background-color: #1976D2;
-        }
-
-        #filteredButton {
-            background-color: #FF9800;
-            margin-left: auto;
-        }
-
-        #filteredButton:hover {
-            background-color: #F57C00;
-        }
-        
-        .timerange-container {
-            margin-top: 15px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
-            padding: 10px;
-            background-color: #f9f9f9;
-            border-radius: 5px;
-            border: 1px solid #ddd;
-        }
-        
-        .timerange-container label {
-            font-weight: bold;
-            color: #333;
-            font-size: 14px;
-        }
-        
-        .timerange-container input[type="date"], 
-        .timerange-container input[type="time"] {
-            padding: 6px 10px;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
-            font-family: inherit;
-            background-color: white;
-        }
-        
-        .timerange-container input[type="date"]:focus,
-        .timerange-container input[type="time"]:focus {
-            outline: none;
-            border-color: #2196F3;
-        }
-        
-        .timerange-container button {
-            padding: 8px 16px;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 14px;
-            cursor: pointer;
-            font-family: inherit;
-            font-weight: bold;
-        }
-        
-        #applyTimeRangeButton {
-            background-color: #4CAF50;
-        }
-        
-        #applyTimeRangeButton:hover {
-            background-color: #388E3C;
-        }
-        
-        #clearTimeRangeButton {
-            background-color: #757575;
-        }
-        
-        #clearTimeRangeButton:hover {
-            background-color: #424242;
-        }
-        
-        #searchResults {
-            width: 100%;
-            margin-top: 10px;
-            font-size: 14px;
-            position: relative;
-            background: #ffffff;
-            border: 1px solid #2196F3;
-            border-radius: 8px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.12);
-            padding: 6px 10px;
-            max-height: 260px;
-            overflow-y: auto;
-            backdrop-filter: none;
-            z-index: 1;
-            display: none;
-        }
-        
-        .search-result {
-            background-color: #e3f2fd;
-            padding: 8px 12px;
-            margin: 5px 0;
-            border-radius: 4px;
-            cursor: pointer;
-            border: 1px solid #2196F3;
-        }
-        
-        .search-result:hover {
-            background-color: #bbdefb;
-        }
-        
-        .search-no-results {
-            color: #f44336;
-            font-style: italic;
-            padding: 8px 0;
-        }
-        
-        .search-multiple {
-            color: #ff9800;
-            font-weight: bold;
-            padding: 8px 0;
-        }
-        
+        .search-container { margin-top: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; position: relative; }
+        .search-container input[type="text"] { flex: 1; min-width: 250px; max-width: 400px; padding: 8px 12px; border: 2px solid #ddd; border-radius: 5px; font-size: 14px; font-family: inherit; }
+        .search-container input[type="text"]:focus { outline: none; border-color: #2196F3; }
+        .search-container button { padding: 8px 16px; color: white; border: none; border-radius: 5px; font-size: 14px; cursor: pointer; font-family: inherit; font-weight: bold; }
+        .search-container button:hover { opacity: 0.9; }
+        #searchButton { background-color: #2196F3; }
+        #searchButton:hover { background-color: #1976D2; }
+        #filteredButton { background-color: #FF9800; margin-left: auto; }
+        #filteredButton:hover { background-color: #F57C00; }
+        .timerange-container { margin-top: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px; background-color: #f9f9f9; border-radius: 5px; border: 1px solid #ddd; }
+        .timerange-container label { font-weight: bold; color: #333; font-size: 14px; }
+        .timerange-container input[type="date"], .timerange-container input[type="time"] { padding: 6px 10px; border: 2px solid #ddd; border-radius: 5px; font-size: 14px; font-family: inherit; background-color: white; }
+        .timerange-container input[type="date"]:focus, .timerange-container input[type="time"]:focus { outline: none; border-color: #2196F3; }
+        .timerange-container button { padding: 8px 16px; color: white; border: none; border-radius: 5px; font-size: 14px; cursor: pointer; font-family: inherit; font-weight: bold; }
+        #applyTimeRangeButton { background-color: #4CAF50; }
+        #applyTimeRangeButton:hover { background-color: #388E3C; }
+        #clearTimeRangeButton { background-color: #757575; }
+        #clearTimeRangeButton:hover { background-color: #424242; }
+        #searchResults { width: 100%; margin-top: 10px; font-size: 14px; position: relative; background: #ffffff; border: 1px solid #2196F3; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.12); padding: 6px 10px; max-height: 260px; overflow-y: auto; backdrop-filter: none; z-index: 1; display: none; }
+        .search-result { background-color: #e3f2fd; padding: 8px 12px; margin: 5px 0; border-radius: 4px; cursor: pointer; border: 1px solid #2196F3; }
+        .search-result:hover { background-color: #bbdefb; }
+        .search-no-results { color: #f44336; font-style: italic; padding: 8px 0; }
+        .search-multiple { color: #ff9800; font-weight: bold; padding: 8px 0; }
         .mermaid svg g.clickable-node:hover { opacity: 0.8; cursor: pointer !important; }
         .mermaid svg g.clickable-node * { cursor: pointer !important; }
-        
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
-        .modal-content { 
-            background-color: #fefefe; 
-            margin: 5% auto; 
-            padding: 20px; 
-            border: none; 
-            border-radius: 10px; 
-            width: 80%; 
-            max-width: 800px; 
-            max-height: 80vh; 
-            overflow-y: auto;
-            font-family: inherit; 
-        }
+        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: none; border-radius: 10px; width: 80%; max-width: 800px; max-height: 80vh; overflow-y: auto; font-family: inherit; }
         .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
         .close:hover, .close:focus { color: black; }
-        
         .detail-section { margin-bottom: 20px; }
         .detail-section h4 { color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 5px; margin-top: 0; }
         .detail-section p { color: #333; font-weight: normal; word-wrap: break-word; overflow-wrap: break-word; }
-        
-        .merge-log {
-            font-family: monospace; 
-            font-size: 12px; 
-            background: #f5f5f5; 
-            padding: 8px; 
-            border-radius: 4px;
-        }
-        
-        .entries-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin-top: 10px; 
-            font-family: inherit; 
-            table-layout: fixed;
-        }
-        
-        .entries-table th, .entries-table td { 
-            border: 1px solid #ddd; 
-            padding: 8px; 
-            text-align: left; 
-            color: #333;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            vertical-align: top;
-        }
-        
-        .entries-table th { 
-            background-color: #2196F3; 
-            color: white; 
-            font-weight: bold; 
-        }
-        
+        .merge-log { font-family: monospace; font-size: 12px; background: #f5f5f5; padding: 8px; border-radius: 4px; }
+        .entries-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-family: inherit; table-layout: fixed; }
+        .entries-table th, .entries-table td { border: 1px solid #ddd; padding: 8px; text-align: left; color: #333; word-wrap: break-word; overflow-wrap: break-word; vertical-align: top; }
+        .entries-table th { background-color: #2196F3; color: white; font-weight: bold; }
         .entries-table tr:nth-child(even) { background-color: #f2f2f2; }
         .entries-table tr:hover { background-color: #e3f2fd; }
-        
-        .entries-table th:first-child { 
-            width: 60px; 
-            text-align: center; 
-            background-color: #1976D2; 
-        }
-        
+        .entries-table th:first-child { width: 60px; text-align: center; background-color: #1976D2; }
         .entries-table th:nth-child(2) { width: 90px; }
         .entries-table th:nth-child(3) { width: 140px; }
         .entries-table th:nth-child(4) { width: 120px; }
-        .entries-table th:nth-child(5) { 
-            width: calc(100% - 410px);
-            min-width: 200px;
-        }
-        
-        .entries-table td:first-child, 
-        .entries-table td:nth-child(2) { 
-            text-align: center; 
-            font-weight: bold; 
-            color: #1976D2; 
-        }
-        
-        .entries-table td:nth-child(5) {
-            word-break: break-all;
-            hyphens: auto;
-            max-width: 200px;
-        }
-        
-        .filtered-section { 
-            margin-top: 20px; 
-            padding-top: 15px; 
-        }
-        
-        .filtered-section p { 
-            border-bottom: 2px solid #FF9800; 
-            padding-bottom: 10px; 
-            margin-bottom: 15px;
-            word-wrap: break-word;
-        }
-        
-        .filtered-table th { 
-            background-color: #FF9800; 
-            color: white; 
-        }
-        
-        .filtered-table th:first-child { 
-            background-color: #F57C00; 
-        }
-        
-        .filtered-table td:first-child, 
-        .filtered-table td:nth-child(2) { 
-            text-align: center; 
-            font-weight: bold; 
-            color: #F57C00; 
-        }
-        
-        .filtered-table tr:hover { 
-            background-color: #fff3e0; 
-        }
-        
-        .info-tooltip {
-            position: relative;
-            display: inline-block;
-            background-color: #2196F3;
-            color: white;
-            border-radius: 50%;
-            width: 16px;
-            height: 16px;
-            text-align: center;
-            font-size: 12px;
-            font-weight: bold;
-            line-height: 16px;
-            cursor: help;
-            margin-left: 5px;
-            vertical-align: top;
-        }
-        
-        .info-tooltip:hover {
-            background-color: #1976D2;
-        }
-        
-        .tooltip-text {
-            visibility: hidden;
-            width: 250px;
-            background-color: #333;
-            color: #fff;
-            text-align: center;
-            border-radius: 6px;
-            padding: 8px;
-            position: absolute;
-            z-index: 1001;
-            bottom: 125%;
-            left: 50%;
-            margin-left: -125px;
-            font-size: 13px;
-            font-weight: normal;
-            line-height: 1.3;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        }
-        
-        .tooltip-text::after {
-            content: "";
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            margin-left: -5px;
-            border-width: 5px;
-            border-style: solid;
-            border-color: #333 transparent transparent transparent;
-        }
-        
-        .info-tooltip:hover .tooltip-text {
-            visibility: visible;
-            opacity: 1;
-        }
-        
-        #modalTitle {
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            word-break: break-all;
-            hyphens: auto;
-            max-width: 100%;
-            line-height: 1.3;
-            color: #333;
-            border-bottom: 2px solid #2196F3;
-            padding-bottom: 5px;
-            margin-bottom: 15px;
-        }
-
-        .checkbox-container {
-            margin-top: 15px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 10px;
-            background-color: #f9f9f9;
-        }
-        
-        .checkbox-list {
-            margin-top: 10px;
-            border-top: 1px solid #ddd;
-            padding-top: 10px;
-        }
-        
-        .checkbox-item {
-            margin: 5px 0;
-            display: flex;
-            align-items: center;
-        }
-        
-        .checkbox-item input {
-            margin-right: 8px;
-            cursor: pointer;
-        }
-        
-        .checkbox-item label {
-            cursor: pointer;
-            word-break: break-all;
-        }
-        
-        .filter-button {
-            background-color: #607D8B;
-            color: white;
-            border: none;
-            padding: 5px 10px;
-            border-radius: 4px;
-            margin-right: 10px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .filter-button:hover {
-            background-color: #455A64;
-        }
-        
-        .reload-container {
-            margin-top: 20px;
-            text-align: center;
-        }
-        
-        .reload-button {
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background-color 0.3s;
-        }
-        
-        .reload-button:hover {
-            background-color: #388E3C;
-        }
-        
-        .reload-button:disabled {
-            background-color: #A5D6A7;
-            cursor: not-allowed;
-        }
+        .entries-table th:nth-child(5) { width: calc(100% - 410px); min-width: 200px; }
+        .entries-table td:first-child, .entries-table td:nth-child(2) { text-align: center; font-weight: bold; color: #1976D2; }
+        .entries-table td:nth-child(5) { word-break: break-all; hyphens: auto; max-width: 200px; }
+        .filtered-section { margin-top: 20px; padding-top: 15px; }
+        .filtered-section p { border-bottom: 2px solid #FF9800; padding-bottom: 10px; margin-bottom: 15px; word-wrap: break-word; }
+        .filtered-table th { background-color: #FF9800; color: white; }
+        .filtered-table th:first-child { background-color: #F57C00; }
+        .filtered-table td:first-child, .filtered-table td:nth-child(2) { text-align: center; font-weight: bold; color: #F57C00; }
+        .filtered-table tr:hover { background-color: #fff3e0; }
+        .info-tooltip { position: relative; display: inline-block; background-color: #2196F3; color: white; border-radius: 50%; width: 16px; height: 16px; text-align: center; font-size: 12px; font-weight: bold; line-height: 16px; cursor: help; margin-left: 5px; vertical-align: top; }
+        .info-tooltip:hover { background-color: #1976D2; }
+        .tooltip-text { visibility: hidden; width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1001; bottom: 125%; left: 50%; margin-left: -125px; font-size: 13px; font-weight: normal; line-height: 1.3; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+        .tooltip-text::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px; border-width: 5px; border-style: solid; border-color: #333 transparent transparent transparent; }
+        .info-tooltip:hover .tooltip-text { visibility: visible; opacity: 1; }
+        #modalTitle { word-wrap: break-word; overflow-wrap: break-word; word-break: break-all; hyphens: auto; max-width: 100%; line-height: 1.3; color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 5px; margin-bottom: 15px; }
+        .checkbox-container { margin-top: 15px; border: 1px solid #ddd; border-radius: 5px; padding: 10px; background-color: #f9f9f9; }
+        .checkbox-list { margin-top: 10px; border-top: 1px solid #ddd; padding-top: 10px; }
+        .checkbox-item { margin: 5px 0; display: flex; align-items: center; }
+        .checkbox-item input { margin-right: 8px; cursor: pointer; }
+        .checkbox-item label { cursor: pointer; word-break: break-all; }
+        .filter-button { background-color: #607D8B; color: white; border: none; padding: 5px 10px; border-radius: 4px; margin-right: 10px; cursor: pointer; font-size: 12px; }
+        .filter-button:hover { background-color: #455A64; }
+        .reload-container { margin-top: 20px; text-align: center; }
+        .reload-button { background-color: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 14px; transition: background-color 0.3s; }
+        .reload-button:hover { background-color: #388E3C; }
+        .reload-button:disabled { background-color: #A5D6A7; cursor: not-allowed; }
     </style>
 </head>
 <body>

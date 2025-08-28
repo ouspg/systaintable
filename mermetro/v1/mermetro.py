@@ -948,15 +948,14 @@ def reload_metromap():
     try:
         data = request.get_json(silent=True) or {}
         custom_excluded_entries = data.get('excludedEntries', [])
-        multiprocessing_flag = bool(data.get('multiprocessing', False))
 
-        print(f"[reload] multiprocessing={multiprocessing_flag} excluded={len(custom_excluded_entries)}")
+        print(f"[reload] multiprocessing={startup_multiprocessing} excluded={len(custom_excluded_entries)}")
         excluded_entries = custom_excluded_entries
 
         process_json_file(
             reload_requested=True, 
             custom_excluded_entries=excluded_entries, 
-            use_multiprocessing=multiprocessing_flag
+            use_multiprocessing=startup_multiprocessing
         )
         
         return jsonify({'success': True})
