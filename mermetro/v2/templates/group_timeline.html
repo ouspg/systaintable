@@ -341,12 +341,6 @@
                 
                 renderTimelineHeatmap();
                 renderHeatmapStatistics();
-                
-                if (groupId) {
-                    console.log(`Loaded heatmap for group ${groupId}: ${data.total_entries} entries, ${data.segments.length} segments`);
-                } else {
-                    console.log(`Loaded heatmap: ${data.total_entries} entries, ${data.segments.length} segments`);
-                }
             } catch (error) {
                 console.error('Timeline heatmap loading failed:', error);
                 const heatmapContainer = document.getElementById('timelineHeatmapBar');
@@ -877,17 +871,10 @@
                 });
             });
             observer.observe(document.querySelector('.mermaid'), { childList: true, subtree: true });
-            
-            setTimeout(() => {
-                addClickEvents();
-                addGroupClickEvents();
-            }, 2000);
 
             const startDateEl = document.getElementById('startDate');
             const endDateEl = document.getElementById('endDate');
-            if ((startDateEl && startDateEl.value) || (endDateEl && endDateEl.value)) {
-                console.log('skip');
-            } else {
+            if (!(startDateEl && startDateEl.value) && !(endDateEl && endDateEl.value)) {
                 updateMetromap();
             }
          });

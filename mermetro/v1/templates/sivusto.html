@@ -462,7 +462,6 @@
             const startDateEl = document.getElementById('startDate');
             const endDateEl = document.getElementById('endDate');
             if ((startDateEl && startDateEl.value) || (endDateEl && endDateEl.value)) {
-                console.log('skip');
                 const mermaidDiv = document.querySelector('.mermaid');
                 if (mermaidDiv) {
                     currentMetromap = (mermaidDiv.textContent || mermaidDiv.innerText || '').trim();
