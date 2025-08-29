@@ -178,6 +178,10 @@ def create_formed_from_data(group_id, val1, val2, node_details):
 
 
 def generate_timeline_content(group_id, node_details):
+    import time
+    start_time = time.time()
+    print(f"[FORMATION] Starting timeline generation for group {group_id}")
+    
     if group_id not in node_details:
         return "flowchart TD\n    ERROR[Group not found]"
     
@@ -186,6 +190,8 @@ def generate_timeline_content(group_id, node_details):
     
     if not merge_logs:
         return "flowchart TD\n    ERROR[No formation history available]"
+    
+    print(f"[FORMATION] Processing {len(merge_logs)} merge log entries")
     
     content = "flowchart TD\n"
     group_counter = 0

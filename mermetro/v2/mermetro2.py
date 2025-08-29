@@ -3,11 +3,12 @@ import sys
 import os
 import re
 import string
+import time
 from datetime import datetime
 from flask import Flask, render_template, jsonify, send_from_directory, request
 from multiprocessing import Pool, cpu_count
 
-from . import formation, nodes, timeline
+from . import formation, nodes, heatmap
 
 app = Flask(__name__)
 
@@ -424,15 +425,15 @@ def api_timeline():
 @app.route('/api/v2/timeline-heatmap/<group_id>')
 def api_timeline_heatmap(group_id=None):
     try:
-        heatmap_data = timeline.analyze_group_timeline_heatmap(group_id, node_details)
+        heatmap_data = heatmap.analyze_group_timeline_heatmap(group_id, node_details)
             
         if not heatmap_data:
             error_msg = f'No timeline data available for group {group_id}' if group_id else 'No timeline data available'
             return jsonify({'error': error_msg}), 404
             
-        segments = timeline.generate_heatmap_segments(heatmap_data, segments=200)
-        statistics = timeline.get_heatmap_statistics(heatmap_data)
-        
+        segments = heatmap.generate_heatmap_segments(heatmap_data, segments=200)
+        statistics = heatmap.get_heatmap_statistics(heatmap_data)
+
         return jsonify({
             'success': True,
             'group_id': group_id,
@@ -517,47 +518,12 @@ def api_select_group(group_id):
         return jsonify({'success': False, 'error': 'Group not found'}), 404
     
     selected_group_id = group_id
-    
-    if startup_multiprocessing:
-        try:
-            tasks = [
-                ('formation', group_id, node_details),
-                ('nodes', group_id, node_details),
-                ('heatmap', group_id, node_details)
-            ]
-            
-            with Pool(processes=3) as pool:
-                results = pool.map(_parallel_worker, tasks)
-            
-            response_data = {'success': True, 'selected_group': selected_group_id, 'multiprocessing': True}
-            
-            for viz_type, result in results:
-                if viz_type == 'formation' and result:
-                    current_timeline = result
-                    response_data['timeline'] = result
-                elif viz_type == 'nodes' and result:
-                    response_data['nodes_content'] = result
-                elif viz_type == 'heatmap' and result:
-                    response_data['heatmap_data'] = result
-            
-            return jsonify(response_data)
-        except Exception as e:
-            print(f"Multiprocessing error: {e}")
-            current_timeline = formation.generate_timeline_content(group_id, node_details)
-            return jsonify({
-                'success': True, 
-                'selected_group': selected_group_id,
-                'timeline': current_timeline,
-                'multiprocessing': False
-            })
-    else:
-        current_timeline = formation.generate_timeline_content(group_id, node_details)
-        return jsonify({
-            'success': True, 
-            'selected_group': selected_group_id,
-            'timeline': current_timeline,
-            'multiprocessing': False
-        })
+
+    return jsonify({
+        'success': True, 
+        'selected_group': selected_group_id,
+        'multiprocessing': startup_multiprocessing
+    })
 
 @app.route('/api/v2/node-details/<node_id>')
 def api_node_details(node_id):
@@ -816,18 +782,22 @@ def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5001):
 def _parallel_worker(args):
     """Worker function for parallel processing"""
     viz_type, group_id, node_details_copy = args
+    start_time = time.time()
     
+    print(f"[WORKER] Starting {viz_type} processing for group {group_id}")
+    
+    result = None
     if viz_type == 'formation':
-        return ('formation', formation.generate_timeline_content(group_id, node_details_copy))
+        result = ('formation', formation.generate_timeline_content(group_id, node_details_copy))
     elif viz_type == 'nodes':
-        return ('nodes', nodes.generate_nodes_content(group_id, node_details_copy))
+        result = ('nodes', nodes.generate_nodes_content(group_id, node_details_copy))
     elif viz_type == 'heatmap':
-        heatmap_data = timeline.analyze_group_timeline_heatmap(group_id, node_details_copy)
+        heatmap_data = heatmap.analyze_group_timeline_heatmap(group_id, node_details_copy)
         if heatmap_data:
-            segments = timeline.generate_heatmap_segments(heatmap_data, segments=200)
-            statistics = timeline.get_heatmap_statistics(heatmap_data)
-            
-            result = {
+            segments = heatmap.generate_heatmap_segments(heatmap_data, segments=200)
+            statistics = heatmap.get_heatmap_statistics(heatmap_data)
+
+            result_data = {
                 'group_id': heatmap_data['group_id'],
                 'min_timestamp': heatmap_data['min_timestamp'].isoformat(),
                 'max_timestamp': heatmap_data['max_timestamp'].isoformat(),
@@ -847,7 +817,14 @@ def _parallel_worker(args):
                 ],
                 'statistics': statistics
             }
-            return ('heatmap', result)
-        return ('heatmap', None)
+            result = ('heatmap', result_data)
+        else:
+            result = ('heatmap', None)
+    else:
+        result = (viz_type, None)
     
-    return (viz_type, None)
+    end_time = time.time()
+    duration = end_time - start_time
+    print(f"[WORKER] Completed {viz_type} in {duration:.2f} seconds")
+    
+    return result
