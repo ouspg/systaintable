@@ -320,32 +320,6 @@ async function loadGroups() {
     }
 }
 
-async function loadTimelineHeatmap(groupId = null) {
-    try {
-        const url = groupId ? `/api/v2/timeline-heatmap/${groupId}` : '/api/v2/timeline-heatmap';
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (!data.success) {
-            throw new Error(data.error || 'Failed to load heatmap data');
-        }
-        
-        heatmapData = data;
-        heatmapSegments = data.segments;
-        maxActivityCount = heatmapSegments.length > 0 ? 
-            Math.max(...heatmapSegments.map(s => s.count)) : 0;
-        
-        renderTimelineHeatmap();
-        renderHeatmapStatistics();
-    } catch (error) {
-        console.error('Timeline heatmap loading failed:', error);
-        const heatmapContainer = document.getElementById('timelineHeatmapBar');
-        if (heatmapContainer) {
-            heatmapContainer.innerHTML = '<div class="heatmap-error">Failed to load timeline data</div>';
-        }
-    }
-}
-
 function renderTimelineHeatmap() {
     if (!heatmapData || !heatmapSegments.length) return;
     
