@@ -278,9 +278,7 @@ function showFilteredModal(filteredData) {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                return updateMetromap().then(() => {
-                    showRefreshNotification();
-                });
+                return updateMetromap();
             }
             alert('Process failed');
         })
@@ -448,10 +446,6 @@ function performSearch() {
             console.error('Search error:', error);
             searchResults.innerHTML = '<div class="search-no-results">Search error occurred</div>';
         });
-}
-
-function showRefreshNotification() {
-    alert('Metromap updated! Please refresh the page to see changes.');
 }
 
 document.addEventListener('DOMContentLoaded', function() {
