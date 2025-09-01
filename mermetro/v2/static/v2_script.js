@@ -232,6 +232,12 @@ function updateTimelineWithDirection() {
     console.warn('Could not find flowchart definition');
 }
 
+function showModal(title, content) {
+    modalTitle.textContent = title;
+    modalContent.innerHTML = content;
+    modal.style.display = 'block';
+}
+
 function selectGroup(groupId) {
     chartDirection = 'TD';
     document.getElementById('direction-btn').textContent = 'Top Down';
@@ -290,32 +296,6 @@ function selectGroup(groupId) {
             console.error('Error selecting group:', error);
             alert('Error selecting group: ' + error.message);
         });
-}
-
-async function loadNodesVisualization(groupId) {
-    try {
-        const response = await fetch(`/api/v2/visualization/nodes/${groupId}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            const nodesContainer = document.getElementById('nodes-container');
-            nodesContainer.innerHTML = `<div class="mermaid">${data.visualization}</div>`;
-            mermaid.init(undefined, nodesContainer.querySelector('.mermaid'));
-            setTimeout(() => {
-                addClickEvents();
-            }, 1000);
-        } else {
-            console.error('Failed to load nodes visualization:', data.error);
-            const nodesContainer = document.getElementById('nodes-container');
-            nodesContainer.innerHTML = `<div class="mermaid">flowchart TD\n    ERROR["${data.error || 'Failed to load nodes visualization'}"]</div>`;
-            mermaid.init(undefined, nodesContainer.querySelector('.mermaid'));
-        }
-    } catch (error) {
-        console.error('Error loading nodes visualization:', error);
-        const nodesContainer = document.getElementById('nodes-container');
-        nodesContainer.innerHTML = `<div class="mermaid">flowchart TD\n    ERROR["Connection error"]</div>`;
-        mermaid.init(undefined, nodesContainer.querySelector('.mermaid'));
-    }
 }
 
 async function loadGroups() {

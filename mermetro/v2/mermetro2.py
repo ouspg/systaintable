@@ -189,7 +189,7 @@ def _process_line_chunk(chunk_data):
     
     return local_connections, local_nodes, local_node_timestamps, local_node_counts, local_node_entries, local_filtered_data
 
-def process_json_file(reload_requested=False, custom_excluded_entries=None, use_multiprocessing=True, start_time=None, end_time=None):
+def process_json_file(reload_requested=False, custom_excluded_entries=None, use_multiprocessing=startup_multiprocessing, start_time=None, end_time=None):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
     global current_timeline, node_details, available_groups, excluded_entries, group_merge_log
     
@@ -468,7 +468,7 @@ def api_metromap():
     end_time_str = request.args.get('end')
 
     if reset == '1':
-        process_json_file(reload_requested=False, use_multiprocessing=False, start_time=None, end_time=None)
+        process_json_file(reload_requested=False, use_multiprocessing=startup_multiprocessing, start_time=None, end_time=None)
         return jsonify({
             'metromap': current_timeline,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -496,7 +496,7 @@ def api_metromap():
 
     if start_dt or end_dt:
         print(f"Time filtering: start={start_dt}, end={end_dt}")
-        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=False)
+        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
         filtered_result = {
             'metromap': current_timeline,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -703,7 +703,7 @@ def api_add_common_entry():
         excluded_entries = excluded_entries_list
 
         try:
-            process_json_file(reload_requested=True, custom_excluded_entries=excluded_entries, use_multiprocessing=False)
+            process_json_file(reload_requested=True, custom_excluded_entries=excluded_entries, use_multiprocessing=startup_multiprocessing)
         except Exception as e:
             return jsonify({'success': True, 'action': action, 'message': 'File updated but reprocessing failed: ' + str(e)}), 200
 
