@@ -1015,11 +1015,6 @@ def api_add_common_entry():
         global excluded_entries
         excluded_entries = excluded_entries_list
 
-        try:
-            process_json_file(reload_requested=True, custom_excluded_entries=excluded_entries, use_multiprocessing=False)
-        except Exception as e:
-            return jsonify({'success': True, 'action': action, 'message': 'File updated but reprocessing failed: ' + str(e)}), 200
-
         return jsonify({'success': True, 'action': action})
     except Exception as e:
         print(f"api_common_add error: {e}")
