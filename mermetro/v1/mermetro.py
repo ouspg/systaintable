@@ -86,22 +86,22 @@ def parse_identities(entry):
 def _process_line_chunk(chunk_data):
     """Funktio prosessoirin"""
     if len(chunk_data) == 5:
-        chunk_lines, PERSONAL_TYPES, process_filtered_types, common_entries, used_excluded_entries = chunk_data
+        chunk_lines, PERSONAL_TYPES, process_filtered_types, excluded_entries, used_excluded_entries = chunk_data
     else:
         chunk_lines, PERSONAL_TYPES, FILTERED_TYPES = chunk_data
         process_filtered_types = FILTERED_TYPES
         used_excluded_entries = []
         
         try:
-            common_values_path = os.path.join('data', 'common_values.txt')
-            if not os.path.exists(common_values_path):
-                common_values_path = 'common_values.txt'
-                
-            with open(common_values_path, "r", encoding="utf-8") as f:
-                common_entries = set(f.read().splitlines())
+            excluded_values_path = os.path.join('data', 'excluded_values.txt')
+            if not os.path.exists(excluded_values_path):
+                excluded_values_path = 'excluded_values.txt'
+
+            with open(excluded_values_path, "r", encoding="utf-8") as f:
+                excluded_entries = set(f.read().splitlines())
         except FileNotFoundError:
-            common_entries = set()
-    
+            excluded_entries = set()
+
     local_connections = set()
     local_nodes = set()
     local_node_timestamps = {}
@@ -146,8 +146,8 @@ def _process_line_chunk(chunk_data):
             
             if not entry_type or not entry_value:
                 continue
-            
-            is_common = bool(common_entries) and entry_value in common_entries
+
+            is_common = bool(excluded_entries) and entry_value in excluded_entries
             is_filtered = bool(process_filtered_types) and entry_type in process_filtered_types
             is_excluded_value = bool(used_excluded_entries) and entry_value in used_excluded_entries
             is_excluded_type = bool(used_excluded_entries) and entry_type in used_excluded_entries
@@ -498,16 +498,16 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             data = json.load(f)
         
         try:
-            common_values_path = os.path.join('data', 'common_values.txt')
-            if not os.path.exists(common_values_path):
-                common_values_path = 'common_values.txt'
-                
-            with open(common_values_path, "r", encoding="utf-8") as f:
-                common_entries = set(f.read().splitlines())
+            excluded_values_path = os.path.join('data', 'excluded_values.txt')
+            if not os.path.exists(excluded_values_path):
+                excluded_values_path = 'excluded_values.txt'
+
+            with open(excluded_values_path, "r", encoding="utf-8") as f:
+                excluded_entries = set(f.read().splitlines())
                 
         except FileNotFoundError:
-            common_entries = set()
-        
+            excluded_entries = set()
+
         lines = {}
         total_entries = len(data)
         filtered_entries_count = 0
@@ -550,7 +550,7 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             chunks = []
             for i in range(0, len(line_items), chunk_size):
                 chunk = line_items[i:i + chunk_size]
-                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, common_entries, used_excluded_entries))
+                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, excluded_entries, used_excluded_entries))
             with Pool(processes=cpu_count()) as pool:
                 results = pool.map(_process_line_chunk, chunks)
         else:
@@ -558,7 +558,7 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             process_filtered_types = FILTERED_TYPES.copy()
             if used_excluded_entries:
                 process_filtered_types = {t for t in FILTERED_TYPES if t not in used_excluded_entries}
-            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, common_entries, used_excluded_entries)]
+            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, excluded_entries, used_excluded_entries)]
             results = []
             for chunk in chunks:
                 results.append(_process_line_chunk(chunk))
@@ -913,11 +913,11 @@ def api_filtered_entries():
     filtered_values = set()
 
     try:
-        common_values_path = os.path.join('data', 'common_values.txt')
-        if not os.path.exists(common_values_path):
-            common_values_path = 'common_values.txt'
-            
-        with open(common_values_path, "r", encoding="utf-8") as f:
+        excluded_values_path = os.path.join('data', 'excluded_values.txt')
+        if not os.path.exists(excluded_values_path):
+            excluded_values_path = 'excluded_values.txt'
+
+        with open(excluded_values_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
@@ -973,12 +973,12 @@ def api_add_common_entry():
         if '\n' in value or '\r' in value or len(value) > 500:
             return jsonify({'success': False, 'message': 'Invalid value'}), 400
 
-        common_values_path = os.path.join('data', 'common_values.txt')
-        if not os.path.exists(common_values_path):
-            common_values_path = 'common_values.txt'
+        excluded_values_path = os.path.join('data', 'excluded_values.txt')
+        if not os.path.exists(excluded_values_path):
+            excluded_values_path = 'excluded_values.txt'
 
         try:
-            with open(common_values_path, 'r', encoding='utf-8') as f:
+            with open(excluded_values_path, 'r', encoding='utf-8') as f:
                 lines = f.read().splitlines()
         except FileNotFoundError:
             lines = []
@@ -997,17 +997,17 @@ def api_add_common_entry():
             new_lines = lines + [value]
             action = 'added'
 
-        dirpath = os.path.dirname(common_values_path) or '.'
+        dirpath = os.path.dirname(excluded_values_path) or '.'
         os.makedirs(dirpath, exist_ok=True)
-        tmp_path = common_values_path + '.tmp'
+        tmp_path = excluded_values_path + '.tmp'
         with open(tmp_path, 'w', encoding='utf-8') as tf:
             if new_lines:
                 tf.write('\n'.join(new_lines).rstrip('\n') + '\n')
 
-        os.replace(tmp_path, common_values_path)
+        os.replace(tmp_path, excluded_values_path)
 
         try:
-            with open(common_values_path, 'r', encoding='utf-8') as f:
+            with open(excluded_values_path, 'r', encoding='utf-8') as f:
                 excluded_entries_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
         except Exception:
             excluded_entries_list = []
@@ -1037,10 +1037,10 @@ def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5000):
     startup_multiprocessing = bool(multiprocessing)
 
     try:
-        common_values_path = os.path.join('data', 'common_values.txt')
-        if not os.path.exists(common_values_path):
-            common_values_path = 'common_values.txt'
-        with open(common_values_path, "r", encoding="utf-8") as f:
+        excluded_values_path = os.path.join('data', 'excluded_values.txt')
+        if not os.path.exists(excluded_values_path):
+            excluded_values_path = 'excluded_values.txt'
+        with open(excluded_values_path, "r", encoding="utf-8") as f:
             excluded_entries = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except Exception:
         excluded_entries = []

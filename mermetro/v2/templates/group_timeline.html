@@ -3,13 +3,14 @@
 <head>
     <title>Mermetro2</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='v2_styles.css') }}">
-    <script type="module" src="{{ url_for('static', filename='v2_script.js') }}"></script>
     <script>
         window.templateVars = {
-            selectedGroup: '{{ selected_group }}',
-            timestamp: '{{ timestamp }}'
+            selectedGroup: '{{ selected_group or "" }}',
+            timeline: '{{ timeline or "" }}',
+            timestamp: '{{ timestamp or "" }}'
         };
     </script>
+    <script type="module" src="{{ url_for('static', filename='v2_script.js') }}"></script>
 </head>
 <body>
     <div class="header"><h1>Mermetro2</h1></div>
@@ -59,6 +60,7 @@
             {% endif %}
         </div>
     </div>
+    
     <div class="diagram-section">
         <div class="section-header">
             <h2>Node Relationships</h2>
@@ -88,6 +90,7 @@
             </div>
         </div>
     </div>
+    
     <div id="nodeModal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
@@ -95,9 +98,10 @@
             <div id="modalContent"></div>
         </div>
     </div>
+    
     <div id="groupLogModal" class="modal">
         <div class="modal-content">
-            <span class="close" onclick="document.getElementById('groupLogModal').style.display='none'">&times;</span>
+            <span class="close">&times;</span>
             <h2 id="groupLogModalTitle">Group Formation Log</h2>
             <div id="groupLogModalContent"></div>
         </div>
