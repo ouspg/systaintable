@@ -94,9 +94,6 @@ def _process_line_chunk(chunk_data):
         
         try:
             excluded_values_path = os.path.join('data', 'excluded_values.txt')
-            if not os.path.exists(excluded_values_path):
-                excluded_values_path = 'excluded_values.txt'
-
             with open(excluded_values_path, "r", encoding="utf-8") as f:
                 excluded_entries = set(f.read().splitlines())
         except FileNotFoundError:
@@ -499,9 +496,6 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
         
         try:
             excluded_values_path = os.path.join('data', 'excluded_values.txt')
-            if not os.path.exists(excluded_values_path):
-                excluded_values_path = 'excluded_values.txt'
-
             with open(excluded_values_path, "r", encoding="utf-8") as f:
                 excluded_entries = set(f.read().splitlines())
                 
@@ -914,9 +908,6 @@ def api_filtered_entries():
 
     try:
         excluded_values_path = os.path.join('data', 'excluded_values.txt')
-        if not os.path.exists(excluded_values_path):
-            excluded_values_path = 'excluded_values.txt'
-
         with open(excluded_values_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -974,8 +965,6 @@ def api_add_common_entry():
             return jsonify({'success': False, 'message': 'Invalid value'}), 400
 
         excluded_values_path = os.path.join('data', 'excluded_values.txt')
-        if not os.path.exists(excluded_values_path):
-            excluded_values_path = 'excluded_values.txt'
 
         try:
             with open(excluded_values_path, 'r', encoding='utf-8') as f:
@@ -997,8 +986,7 @@ def api_add_common_entry():
             new_lines = lines + [value]
             action = 'added'
 
-        dirpath = os.path.dirname(excluded_values_path) or '.'
-        os.makedirs(dirpath, exist_ok=True)
+        os.makedirs('data', exist_ok=True)
         tmp_path = excluded_values_path + '.tmp'
         with open(tmp_path, 'w', encoding='utf-8') as tf:
             if new_lines:
@@ -1033,8 +1021,6 @@ def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5000):
 
     try:
         excluded_values_path = os.path.join('data', 'excluded_values.txt')
-        if not os.path.exists(excluded_values_path):
-            excluded_values_path = 'excluded_values.txt'
         with open(excluded_values_path, "r", encoding="utf-8") as f:
             excluded_entries = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except Exception:
