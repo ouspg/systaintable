@@ -447,7 +447,6 @@ function renderTimeLabels(container) {
     container.appendChild(fragment);
 }
 
-// Added: showAllGroupEntries helper to open modal with all entries for current group
 function showAllGroupEntries() {
     if (!selectedGroup || !heatmapData) return;
     showModal(`All Entries (Group ${selectedGroup})`, '<div class="loading">Loading all entries...</div>');
@@ -465,7 +464,6 @@ function showAllGroupEntries() {
                 modalContent.innerHTML = '<p class="no-entries">No entries in this range.</p>';
                 return;
             }
-            // Sort similar to v1: by line then timestamp
             entries.sort((a,b) => ( (a.line||0) - (b.line||0) ) || String(a.timestamp||'').localeCompare(String(b.timestamp||'')) );
             
             let content = `
