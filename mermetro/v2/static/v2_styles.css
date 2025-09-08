@@ -370,6 +370,11 @@ h1 {
     color: #1976D2;
 }
 
+.unique-entries-table td:first-child, .unique-entries-table td:nth-child(2) {
+    color: #000000;
+    font-weight: normal;
+}
+
 .filtered-section {
     margin-top: 20px; 
     padding-top: 15px; 

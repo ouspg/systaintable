@@ -447,6 +447,108 @@ function renderTimeLabels(container) {
     container.appendChild(fragment);
 }
 
+// Added: showAllGroupEntries helper to open modal with all entries for current group
+function showAllGroupEntries() {
+    if (!selectedGroup || !heatmapData) return;
+    showModal(`All Entries (Group ${selectedGroup})`, '<div class="loading">Loading all entries...</div>');
+    const startISO = encodeURIComponent(heatmapData.min_timestamp);
+    const endISO = encodeURIComponent(heatmapData.max_timestamp);
+    fetch(`/api/v2/heatmap-entries/${selectedGroup}?start=${startISO}&end=${endISO}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                modalContent.innerHTML = '<p class="no-entries">Failed to load entries.</p>';
+                return;
+            }
+            const entries = Array.isArray(data.entries) ? data.entries.slice() : [];
+            if (!entries.length) {
+                modalContent.innerHTML = '<p class="no-entries">No entries in this range.</p>';
+                return;
+            }
+            // Sort similar to v1: by line then timestamp
+            entries.sort((a,b) => ( (a.line||0) - (b.line||0) ) || String(a.timestamp||'').localeCompare(String(b.timestamp||'')) );
+            
+            let content = `
+                <div class="entries-section">
+                    <h4>All ${entries.length} entries <span class="tooltip" title="All entries for this group in the full timeline range">ℹ</span></h4>
+                    <table class="entries-table">
+                        <thead><tr><th>Line</th><th>Timestamp</th><th>Type</th><th>Value</th></tr></thead>
+                        <tbody>`;
+                        
+            entries.forEach(entry => {
+                content += `<tr>
+                    <td>${entry.line || ''}</td>
+                    <td>${entry.timestamp || ''}</td>
+                    <td>${entry.type || ''}</td>
+                    <td class="value-cell" title="${entry.value || ''}">${entry.value || ''}</td>
+                </tr>`;
+            });
+                        
+            content += `</tbody>
+                    </table>
+                </div>`;
+            
+            modalContent.innerHTML = content;
+        })
+        .catch(e => {
+            modalContent.innerHTML = `<p class=\"no-entries\">Error: ${e.message}</p>`;
+        });
+}
+
+function showAllUniqueEntries() {
+    if (!selectedGroup || !heatmapData) return;
+    showModal(`Unique Entries (Group ${selectedGroup})`, '<div class="loading">Loading unique entries...</div>');
+    const startISO = encodeURIComponent(heatmapData.min_timestamp);
+    const endISO = encodeURIComponent(heatmapData.max_timestamp);
+    fetch(`/api/v2/heatmap-entries/${selectedGroup}?start=${startISO}&end=${endISO}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                modalContent.innerHTML = '<p class="no-entries">Failed to load entries.</p>';
+                return;
+            }
+            const entries = Array.isArray(data.entries) ? data.entries.slice() : [];
+            if (!entries.length) {
+                modalContent.innerHTML = '<p class="no-entries">No entries in this range.</p>';
+                return;
+            }
+            
+            const uniqueMap = new Map();
+            entries.forEach(entry => {
+                const value = entry.value || '';
+                const type = entry.type || '';
+                if (value && !uniqueMap.has(value)) {
+                    uniqueMap.set(value, type);
+                }
+            });
+            
+            const uniqueEntries = Array.from(uniqueMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+            
+            let content = `
+                <div class="entries-section">
+                    <h4>${uniqueEntries.length} unique entries <span class="tooltip" title="Unique entry values for this group in the full timeline range">ℹ</span></h4>
+                    <table class="entries-table unique-entries-table">
+                        <thead><tr><th>Type</th><th>Value</th></tr></thead>
+                        <tbody>`;
+                        
+            uniqueEntries.forEach(([value, type]) => {
+                content += `<tr>
+                    <td>${type}</td>
+                    <td class="value-cell" title="${value}">${value}</td>
+                </tr>`;
+            });
+                        
+            content += `</tbody>
+                    </table>
+                </div>`;
+            
+            modalContent.innerHTML = content;
+        })
+        .catch(e => {
+            modalContent.innerHTML = `<p class=\"no-entries\">Error: ${e.message}</p>`;
+        });
+}
+
 function renderHeatmapStatistics() {
     if (!heatmapData?.statistics) {
         return;
@@ -461,12 +563,12 @@ function renderHeatmapStatistics() {
     const totalEntries = heatmapData.total_entries;
     
     const statCards = [
-        { value: totalEntries.toLocaleString(), label: 'Total Entries' },
+        { value: totalEntries.toLocaleString(), label: 'Total Entries', clickable: true, type: 'total' },
         { value: heatmapData.duration_days, label: 'Days Span' },
         { value: stats.avg_hourly, label: 'Avg/Hour' },
-        { value: stats.unique_entries || 0, label: 'Unique Entries' }
-    ].map(card => 
-        `<div class="stat-card">
+        { value: stats.unique_entries || 0, label: 'Unique Entries', clickable: true, type: 'unique' }
+    ].map(card =>
+        `<div class="stat-card" ${card.clickable ? `data-${card.type}-entries="1" title="Click to view ${card.type === 'total' ? 'all' : 'unique'} entries" style="cursor:pointer;"` : ''}>
             <div class="stat-value">${card.value}</div>
             <div class="stat-label">${card.label}</div>
         </div>`
@@ -493,6 +595,11 @@ function renderHeatmapStatistics() {
             </div>
         </div>
     `;
+    const totalCard = statsContainer.querySelector('[data-total-entries]');
+    if (totalCard) totalCard.addEventListener('click', showAllGroupEntries);
+    
+    const uniqueCard = statsContainer.querySelector('[data-unique-entries]');
+    if (uniqueCard) uniqueCard.addEventListener('click', showAllUniqueEntries);
 }
 
 function showFilteredModal(filteredData) {
