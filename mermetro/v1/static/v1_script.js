@@ -88,10 +88,22 @@ function showGroupModal(nodeData) {
     content += createEntriesTable(nodeData.entries, 'Every unique entry:', 'When has this exact entry appeared in the log file?');
 
     if (nodeData.filtered_entries?.length > 0) {
-        content += createFilteredTable(nodeData.filtered_entries);
+        content += createLoadFilteredButton();
     }
     
     modalContent.innerHTML = content;
+    
+    if (nodeData.filtered_entries?.length > 0) {
+        const loadBtn = document.getElementById('loadFilteredButton');
+        if (loadBtn) {
+            loadBtn.onclick = function() {
+                const buttonContainer = document.getElementById('filteredButtonContainer');
+                if (buttonContainer) {
+                    buttonContainer.innerHTML = createFilteredTable(nodeData.filtered_entries);
+                }
+            };
+        }
+    }
 }
 
 function showNodeModal(nodeData) {
@@ -112,10 +124,22 @@ function showNodeModal(nodeData) {
     content += createEntriesTable(nodeData.entries, 'Unique entries:', 'When has this exact entry appeared in the log file?');
 
     if (nodeData.filtered_entries?.length > 0) {
-        content += createFilteredTable(nodeData.filtered_entries);
+        content += createLoadFilteredButton();
     }
     
     modalContent.innerHTML = content;
+    
+        if (nodeData.filtered_entries?.length > 0) {
+        const loadBtn = document.getElementById('loadFilteredButton');
+        if (loadBtn) {
+            loadBtn.onclick = function() {
+                const buttonContainer = document.getElementById('filteredButtonContainer');
+                if (buttonContainer) {
+                    buttonContainer.innerHTML = createFilteredTable(nodeData.filtered_entries);
+                }
+            };
+        }
+    }
 }
 
 function createEntriesTable(entries, title, tooltipText) {
@@ -172,6 +196,16 @@ function createFilteredTable(filteredEntries) {
                     `).join('')}
                 </tbody>
             </table>
+        </div>
+    `;
+}
+
+function createLoadFilteredButton() {
+    return `
+        <div id="filteredButtonContainer" class="detail-section">
+            <button id="loadFilteredButton" class="filter-button" style="background-color: #FF9800; padding: 10px 20px; font-size: 14px;">
+                Load filtered entries
+            </button>
         </div>
     `;
 }
