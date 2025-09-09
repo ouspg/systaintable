@@ -32,9 +32,6 @@ def clean_value_for_mermaid(value):
 
 def generate_nodes_content(group_id, node_details):
     """Generoi class diagram"""
-    import time
-    start_time = time.time()
-    print(f"[NODES] Starting nodes diagram generation for group {group_id}")
     
     if group_id not in node_details:
         return "classDiagram\n    class ERROR {\n        +Group not found\n    }"
@@ -44,8 +41,6 @@ def generate_nodes_content(group_id, node_details):
     
     if not group_entries:
         return "classDiagram\n    class ERROR {\n        +No entries found for this group\n    }"
-    
-    print(f"[NODES] Processing {len(group_entries)} entries")
     
     entries_by_value = {}
     

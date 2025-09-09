@@ -3,7 +3,6 @@ import sys
 import os
 import re
 import string
-import time
 from datetime import datetime
 from flask import Flask, render_template, jsonify, send_from_directory, request
 from multiprocessing import Pool, cpu_count

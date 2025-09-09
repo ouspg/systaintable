@@ -102,10 +102,6 @@ def get_heatmap_statistics(timeline_data):
     }
 
 def analyze_group_timeline_heatmap(group_id, node_details):
-    import time
-    start_time = time.time()
-    print(f"[HEATMAP] Starting analysis for group {group_id}")
-    
     if group_id not in node_details:
         return None
         
@@ -115,16 +111,13 @@ def analyze_group_timeline_heatmap(group_id, node_details):
     if not group_entries:
         return None
     
-    print(f"[HEATMAP] Processing {len(group_entries)} entries")
-    
     timestamps = []
     hourly_activity = {}
     daily_activity = {}
     type_distribution = {}
     value_distribution = {}
     unique_node_ids = set()
-    
-    parse_start = time.time()
+
     for entry in group_entries:
         timestamp_str = entry.get('timestamp', 'N/A')
         if timestamp_str == 'N/A':
@@ -157,9 +150,6 @@ def analyze_group_timeline_heatmap(group_id, node_details):
                 fallback_node_id = f"{entry_type}_{clean_value}"
                 unique_node_ids.add(fallback_node_id)
     
-    parse_end = time.time()
-    print(f"[HEATMAP] Entry parsing took {parse_end - parse_start:.2f} seconds")
-    
     if not timestamps:
         return None
         
@@ -167,10 +157,6 @@ def analyze_group_timeline_heatmap(group_id, node_details):
     min_time = timestamps[0]
     max_time = timestamps[-1]
     total_duration = max_time - min_time
-    
-    end_time = time.time()
-    total_time = end_time - start_time
-    print(f"[HEATMAP] Analysis completed in {total_time:.2f} seconds")
     
     return {
         'min_timestamp': min_time,

@@ -128,7 +128,7 @@ function showNodeModal(nodeData) {
     }
     
     modalContent.innerHTML = content;
-    
+
         if (nodeData.filtered_entries?.length > 0) {
         const loadBtn = document.getElementById('loadFilteredButton');
         if (loadBtn) {
@@ -345,9 +345,9 @@ function showFilteredModal(filteredData) {
             }).then(r => r.json());
 
             if (resp.success) {
-                if (resp.action === 'removed') alert('Removed from common_values.txt');
-                else if (resp.action === 'added') alert('Added to common_values.txt');
-                else alert('Updated common_values.txt');
+                if (resp.action === 'removed') alert('Removed from filtered_entries.txt');
+                else if (resp.action === 'added') alert('Added to filtered_entries.txt');
+                else alert('Updated filtered_entries.txt');
 
                 const data = await fetch('/api/v1/filtered-entries', { cache: 'no-store' }).then(r => r.json());
                 checkboxList.innerHTML = data.map(value => 

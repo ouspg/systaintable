@@ -736,9 +736,9 @@ function showFilteredModal(filteredData) {
             }).then(r => r.json());
 
             if (resp.success) {
-                if (resp.action === 'removed') alert('Removed from common_values.txt');
-                else if (resp.action === 'added') alert('Added to common_values.txt');
-                else alert('Updated common_values.txt');
+                if (resp.action === 'removed') alert('Removed from filtered_entries.txt');
+                else if (resp.action === 'added') alert('Added to filtered_entries.txt');
+                else alert('Updated filtered_entries.txt');
 
                 const data = await fetch('/api/v2/filtered-entries', { cache: 'no-store' }).then(r => r.json());
                 checkboxList.innerHTML = data.map(value => 
@@ -827,7 +827,7 @@ function showRefreshNotification() {
     notification.innerHTML = `
         <div class="refresh-notification-content">
             <h3>Metromap Updated Successfully!</h3>
-            <strong>Please refresh the page to see the updated groups and timeline.</strong></p>
+            <strong>Please refresh the page to see the updated groups.</strong></p>
             <div class="refresh-buttons">
                 <button id="refreshPageButton" class="refresh-page-button">Refresh Page Now</button>
                 <button id="dismissButton" class="dismiss-button">Dismiss</button>
