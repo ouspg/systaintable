@@ -15,7 +15,7 @@ FILTERED_TYPES = {'Example', 'Example2'}
 current_metromap = ""
 node_details = {}
 group_merge_log = {}
-excluded_entries = []
+filtered_entries = []
 startup_multiprocessing = False
 lokitiedosto = None
 
@@ -86,18 +86,18 @@ def parse_identities(entry):
 def _process_line_chunk(chunk_data):
     """Funktio prosessoirin"""
     if len(chunk_data) == 5:
-        chunk_lines, PERSONAL_TYPES, process_filtered_types, excluded_entries, used_excluded_entries = chunk_data
+        chunk_lines, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries = chunk_data
     else:
         chunk_lines, PERSONAL_TYPES, FILTERED_TYPES = chunk_data
         process_filtered_types = FILTERED_TYPES
-        used_excluded_entries = []
+        used_filtered_entries = []
         
         try:
-            excluded_values_path = os.path.join('data', 'excluded_values.txt')
-            with open(excluded_values_path, "r", encoding="utf-8") as f:
-                excluded_entries = set(f.read().splitlines())
+            filtered_values_path = os.path.join('data', 'filtered_entries.txt')
+            with open(filtered_values_path, "r", encoding="utf-8") as f:
+                filtered_entries = set(f.read().splitlines())
         except FileNotFoundError:
-            excluded_entries = set()
+            filtered_entries = set()
 
     local_connections = set()
     local_nodes = set()
@@ -144,12 +144,12 @@ def _process_line_chunk(chunk_data):
             if not entry_type or not entry_value:
                 continue
 
-            is_common = bool(excluded_entries) and entry_value in excluded_entries
+            is_common = bool(filtered_entries) and entry_value in filtered_entries
             is_filtered = bool(process_filtered_types) and entry_type in process_filtered_types
-            is_excluded_value = bool(used_excluded_entries) and entry_value in used_excluded_entries
-            is_excluded_type = bool(used_excluded_entries) and entry_type in used_excluded_entries
+            is_filtered_value = bool(used_filtered_entries) and entry_value in used_filtered_entries
+            is_filtered_type = bool(used_filtered_entries) and entry_type in used_filtered_entries
 
-            if is_excluded_value or is_excluded_type:
+            if is_filtered_value or is_filtered_type:
                 filtered_entry = {
                     'type': entry_type,
                     'value': entry_value,
@@ -461,15 +461,15 @@ def generate_metromap_content(all_nodes, connections):
     
     return content
 
-def process_json_file(reload_requested=False, custom_excluded_entries=None, use_multiprocessing=True, start_time=None, end_time=None):
+def process_json_file(reload_requested=False, custom_filtered_entries=None, use_multiprocessing=True, start_time=None, end_time=None):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
-    global current_metromap, node_details, excluded_entries
+    global current_metromap, node_details, filtered_entries
     
-    used_excluded_entries = custom_excluded_entries if (reload_requested and custom_excluded_entries is not None) else excluded_entries
-    used_excluded_entries = set(used_excluded_entries)
+    used_filtered_entries = custom_filtered_entries if (reload_requested and custom_filtered_entries is not None) else filtered_entries
+    used_filtered_entries = set(used_filtered_entries)
     if start_time or end_time:
         print(f"[process] time filter active start={start_time} end={end_time}")
-    print(f"[process] excluded entries active: {len(used_excluded_entries)}")
+    print(f"[process] filtered entries active: {len(used_filtered_entries)}")
     
     all_nodes = set()
     connections_set = set()
@@ -495,12 +495,12 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             data = json.load(f)
         
         try:
-            excluded_values_path = os.path.join('data', 'excluded_values.txt')
-            with open(excluded_values_path, "r", encoding="utf-8") as f:
-                excluded_entries = set(f.read().splitlines())
+            filtered_values_path = os.path.join('data', 'filtered_entries.txt')
+            with open(filtered_values_path, "r", encoding="utf-8") as f:
+                filtered_entries = set(f.read().splitlines())
                 
         except FileNotFoundError:
-            excluded_entries = set()
+            filtered_entries = set()
 
         lines = {}
         total_entries = len(data)
@@ -538,21 +538,21 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             print(f"Using multiprocessing with {cpu_count()} cores. This may take a while...")
             chunk_size = max(1, len(line_items) // cpu_count())
             process_filtered_types = FILTERED_TYPES.copy()
-            if used_excluded_entries:
-                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_excluded_entries}
+            if used_filtered_entries:
+                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_filtered_entries}
 
             chunks = []
             for i in range(0, len(line_items), chunk_size):
                 chunk = line_items[i:i + chunk_size]
-                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, excluded_entries, used_excluded_entries))
+                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries))
             with Pool(processes=cpu_count()) as pool:
                 results = pool.map(_process_line_chunk, chunks)
         else:
             print("Processing without multiprocessing...")
             process_filtered_types = FILTERED_TYPES.copy()
-            if used_excluded_entries:
-                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_excluded_entries}
-            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, excluded_entries, used_excluded_entries)]
+            if used_filtered_entries:
+                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_filtered_entries}
+            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries)]
             results = []
             for chunk in chunks:
                 results.append(_process_line_chunk(chunk))
@@ -903,12 +903,12 @@ def favicon():
 @app.route('/api/v1/filtered-entries')
 def api_filtered_entries():
     """API suodattamien entryjen hakuun"""
-    global excluded_entries
+    global filtered_entries
     filtered_values = set()
 
     try:
-        excluded_values_path = os.path.join('data', 'excluded_values.txt')
-        with open(excluded_values_path, "r", encoding="utf-8") as f:
+        filtered_values_path = os.path.join('data', 'filtered_entries.txt')
+        with open(filtered_values_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
@@ -934,18 +934,18 @@ def api_filtered_entries():
 
 @app.route('/api/v1/reload-metromap', methods=['POST'])
 def reload_metromap():
-    """Reload the metromap with custom exclusion settings"""
-    global excluded_entries
+    """Reload the metromap with custom filtered settings"""
+    global filtered_entries
     try:
         data = request.get_json(silent=True) or {}
-        custom_excluded_entries = data.get('excludedEntries', [])
+        custom_filtered_entries = data.get('filteredEntries', [])
 
-        print(f"[reload] multiprocessing={startup_multiprocessing} excluded={len(custom_excluded_entries)}")
-        excluded_entries = custom_excluded_entries
+        print(f"[reload] multiprocessing={startup_multiprocessing} filtered={len(custom_filtered_entries)}")
+        filtered_entries = custom_filtered_entries
 
         process_json_file(
             reload_requested=True, 
-            custom_excluded_entries=excluded_entries, 
+            custom_filtered_entries=filtered_entries, 
             use_multiprocessing=startup_multiprocessing
         )
         
@@ -964,10 +964,10 @@ def api_add_common_entry():
         if '\n' in value or '\r' in value or len(value) > 500:
             return jsonify({'success': False, 'message': 'Invalid value'}), 400
 
-        excluded_values_path = os.path.join('data', 'excluded_values.txt')
+        filtered_values_path = os.path.join('data', 'filtered_entries.txt')
 
         try:
-            with open(excluded_values_path, 'r', encoding='utf-8') as f:
+            with open(filtered_values_path, 'r', encoding='utf-8') as f:
                 lines = f.read().splitlines()
         except FileNotFoundError:
             lines = []
@@ -987,30 +987,30 @@ def api_add_common_entry():
             action = 'added'
 
         os.makedirs('data', exist_ok=True)
-        tmp_path = excluded_values_path + '.tmp'
+        tmp_path = filtered_values_path + '.tmp'
         with open(tmp_path, 'w', encoding='utf-8') as tf:
             if new_lines:
                 tf.write('\n'.join(new_lines).rstrip('\n') + '\n')
 
-        os.replace(tmp_path, excluded_values_path)
+        os.replace(tmp_path, filtered_values_path)
 
         try:
-            with open(excluded_values_path, 'r', encoding='utf-8') as f:
-                excluded_entries_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+            with open(filtered_values_path, 'r', encoding='utf-8') as f:
+                filtered_entries_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
         except Exception:
-            excluded_entries_list = []
+            filtered_entries_list = []
 
-        global excluded_entries
-        excluded_entries = excluded_entries_list
+        global filtered_entries
+        filtered_entries = filtered_entries_list
 
         return jsonify({'success': True, 'action': action})
     except Exception as e:
-        print(f"api_common_add error: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        print(f"Error adding filtered entry: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5000):
 
-    global lokitiedosto, startup_multiprocessing, excluded_entries
+    global lokitiedosto, startup_multiprocessing, filtered_entries
 
     if not os.path.isfile(jsonfile):
         print(f"Error: File '{jsonfile}' not found.")
@@ -1020,11 +1020,11 @@ def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5000):
     startup_multiprocessing = bool(multiprocessing)
 
     try:
-        excluded_values_path = os.path.join('data', 'excluded_values.txt')
-        with open(excluded_values_path, "r", encoding="utf-8") as f:
-            excluded_entries = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        filtered_values_path = os.path.join('data', 'filtered_entries.txt')
+        with open(filtered_values_path, "r", encoding="utf-8") as f:
+            filtered_entries = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except Exception:
-        excluded_entries = []
+        filtered_entries = []
 
     process_json_file(use_multiprocessing=startup_multiprocessing)
 

@@ -12,7 +12,7 @@ let currentMetromap = '';
 
 let modal, modalTitle, modalContent, searchResults;
 
-let excludedEntries = [];
+let filteredEntries = [];
 
 window.showNodeDetails = function(nodeId) {
     window.currentId = nodeId;
@@ -179,13 +179,13 @@ function createFilteredTable(filteredEntries) {
 function showFilteredModal(filteredData) {
     modalTitle.textContent = 'Filtered Entries';
 
-    const storageKey = 'mermetro_excludedEntries_v1';
-    let savedExcluded = null;
+    const storageKey = 'mermetro_filteredEntries_v1';
+    let savedFiltered = null;
     try {
         const raw = localStorage.getItem(storageKey);
-        if (raw) savedExcluded = JSON.parse(raw);
+        if (raw) savedFiltered = JSON.parse(raw);
     } catch (e) {
-        console.warn('Failed to read saved excluded entries', e);
+        console.warn('Failed to read saved filtered entries', e);
     }
 
     const nodeListHtml = filteredData.length > 0 ? 
@@ -230,31 +230,31 @@ function showFilteredModal(filteredData) {
         const cb = e.target;
         if (!cb || !cb.classList || !cb.classList.contains('entry-checkbox')) return;
         if (cb.checked) {
-            excludedEntries = excludedEntries.filter(item => item !== cb.value);
+            filteredEntries = filteredEntries.filter(item => item !== cb.value);
         } else {
-            if (!excludedEntries.includes(cb.value)) excludedEntries.push(cb.value);
+            if (!filteredEntries.includes(cb.value)) filteredEntries.push(cb.value);
         }
-        try { localStorage.setItem(storageKey, JSON.stringify(excludedEntries)); } catch (err) {}
+        try { localStorage.setItem(storageKey, JSON.stringify(filteredEntries)); } catch (err) {}
     };
 
     const selectAllBtn = document.getElementById('selectAllButton');
     const deselectAllBtn = document.getElementById('deselectAllButton');
     selectAllBtn.onclick = function() {
         checkboxList.querySelectorAll('.entry-checkbox').forEach(checkbox => checkbox.checked = true);
-        excludedEntries = [];
-        try { localStorage.setItem(storageKey, JSON.stringify(excludedEntries)); } catch (err) {}
+        filteredEntries = [];
+        try { localStorage.setItem(storageKey, JSON.stringify(filteredEntries)); } catch (err) {}
     };
     deselectAllBtn.onclick = function() {
         checkboxList.querySelectorAll('.entry-checkbox').forEach(checkbox => checkbox.checked = false);
-        excludedEntries = Array.from(checkboxList.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
-        try { localStorage.setItem(storageKey, JSON.stringify(excludedEntries)); } catch (err) {}
+        filteredEntries = Array.from(checkboxList.querySelectorAll('.entry-checkbox')).map(cb => cb.value);
+        try { localStorage.setItem(storageKey, JSON.stringify(filteredEntries)); } catch (err) {}
     };
 
-    if (Array.isArray(savedExcluded)) {
+    if (Array.isArray(savedFiltered)) {
         checkboxList.querySelectorAll('.entry-checkbox').forEach(cb => {
-            cb.checked = !savedExcluded.includes(cb.value);
+            cb.checked = !savedFiltered.includes(cb.value);
         });
-        excludedEntries = savedExcluded.slice();
+        filteredEntries = savedFiltered.slice();
     } else {
         deselectAllBtn.click();
     }
@@ -271,7 +271,7 @@ function showFilteredModal(filteredData) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify({ 
-                excludedEntries: excludedEntries
+                filteredEntries: filteredEntries
             }),
             cache: 'no-store'
         })
@@ -331,7 +331,7 @@ function showFilteredModal(filteredData) {
                         checkboxList.querySelectorAll('.entry-checkbox').forEach(cb => {
                             cb.checked = !currentSaved.includes(cb.value);
                         });
-                        excludedEntries = currentSaved.slice();
+                        filteredEntries = currentSaved.slice();
                     } else {
                         deselectAllBtn.click();
                     }
