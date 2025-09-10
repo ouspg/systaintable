@@ -191,7 +191,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
     global current_timeline, node_details, available_groups, filtered_entries, group_merge_log
 
     used_filtered_entries = custom_filtered_entries if (reload_requested and custom_filtered_entries is not None) else filtered_entries
-    used_filtered_entries = set(used_filtered_entries)
+    used_filtered_entries = set(str(x) for x in used_filtered_entries if isinstance(x, (str, int, float)))
     if start_time or end_time:
         print(f"[process] time filter active start={start_time} end={end_time}")
     print(f"[process] filtered entries active: {len(used_filtered_entries)}")

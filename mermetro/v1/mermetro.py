@@ -464,13 +464,13 @@ def generate_metromap_content(all_nodes, connections):
 def process_json_file(reload_requested=False, custom_filtered_entries=None, use_multiprocessing=True, start_time=None, end_time=None):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
     global current_metromap, node_details, filtered_entries
-    
+
     used_filtered_entries = custom_filtered_entries if (reload_requested and custom_filtered_entries is not None) else filtered_entries
-    used_filtered_entries = set(used_filtered_entries)
+    used_filtered_entries = set(str(x) for x in used_filtered_entries if isinstance(x, (str, int, float)))
     if start_time or end_time:
         print(f"[process] time filter active start={start_time} end={end_time}")
     print(f"[process] filtered entries active: {len(used_filtered_entries)}")
-    
+
     all_nodes = set()
     connections_set = set()
     node_timestamps = {}
@@ -489,7 +489,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
         if end_time and entry_timestamp > end_time:
             return False
         return True
-    
+
     try:
         with open(lokitiedosto, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -589,7 +589,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
             timestamps = node_timestamps.get(node_key, ['N/A'])
             count = node_counts.get(node_key, 0)
             entries = node_entries.get(node_key, [])
-            filtered_entries = filtered_data.get(node_key, [])
+            node_filtered_entries = filtered_data.get(node_key, [])
 
             valid_timestamps = []
             for ts in timestamps:
@@ -609,7 +609,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
                     'first_seen': first_time,
                     'last_seen': last_time,
                     'entries': sorted(entries, key=lambda x: x['timestamp']),
-                    'filtered_entries': sorted(filtered_entries, key=lambda x: x['timestamp'])
+                    'filtered_entries': sorted(node_filtered_entries, key=lambda x: x['timestamp'])
                 }
 
                 if first_time == last_time:
@@ -624,7 +624,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
                     'first_seen': 'N/A',
                     'last_seen': 'N/A',
                     'entries': entries,
-                    'filtered_entries': filtered_entries
+                    'filtered_entries': node_filtered_entries
                 }
                 info = f"<br/>Time: N/A<br/>Count: {count}"
             
