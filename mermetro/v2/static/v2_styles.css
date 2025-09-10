@@ -709,12 +709,22 @@ h1 {
     background-color: #388E3C;
 }
 
+#applyTimeRangeButton:disabled { 
+    background-color: #A5D6A7; 
+    cursor: not-allowed; 
+}
+
 #clearTimeRangeButton {
     background-color: #757575;
 }
 
 #clearTimeRangeButton:hover {
     background-color: #424242;
+}
+
+#clearTimeRangeButton:disabled { 
+    background-color: #BDBDBD; 
+    cursor: not-allowed; 
 }
 
 .refresh-notification {
