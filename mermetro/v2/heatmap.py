@@ -117,7 +117,7 @@ def analyze_group_timeline_heatmap(group_id, node_details):
     type_distribution = {}
     value_distribution = {}
     unique_node_ids = set()
-    
+
     for entry in group_entries:
         timestamp_str = entry.get('timestamp', 'N/A')
         if timestamp_str == 'N/A':

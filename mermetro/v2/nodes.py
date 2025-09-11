@@ -32,6 +32,7 @@ def clean_value_for_mermaid(value):
 
 def generate_nodes_content(group_id, node_details):
     """Generoi class diagram"""
+    
     if group_id not in node_details:
         return "classDiagram\n    class ERROR {\n        +Group not found\n    }"
     

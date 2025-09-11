@@ -7,7 +7,7 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify, send_from_directory, request
 from multiprocessing import Pool, cpu_count
 
-from . import formation, nodes, timeline
+from . import formation, nodes, heatmap
 
 app = Flask(__name__)
 
@@ -19,7 +19,7 @@ node_details = {}
 group_merge_log = {}
 selected_group_id = None
 available_groups = {}
-excluded_entries = []
+filtered_entries = []
 startup_multiprocessing = False
 lokitiedosto = None
 
@@ -80,22 +80,20 @@ def parse_identities(entry):
 def _process_line_chunk(chunk_data):
     """Prosessoi yhden riviryhmän rinnakkain"""
     if len(chunk_data) == 5:
-        chunk_lines, PERSONAL_TYPES, process_filtered_types, common_entries, used_excluded_entries = chunk_data
+        chunk_lines, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries = chunk_data
     else:
         chunk_lines, PERSONAL_TYPES, FILTERED_TYPES = chunk_data
         process_filtered_types = FILTERED_TYPES
-        used_excluded_entries = []
-        
+        used_filtered_entries = []
+
         try:
-            common_values_path = os.path.join('data', 'common_values.txt')
-            if not os.path.exists(common_values_path):
-                common_values_path = 'common_values.txt'
-                
-            with open(common_values_path, "r", encoding="utf-8") as f:
-                common_entries = set(f.read().splitlines())
+            filtered_values_path = os.path.join('data', 'filtered_entries.txt')
+
+            with open(filtered_values_path, "r", encoding="utf-8") as f:
+                filtered_entries = set(f.read().splitlines())
         except FileNotFoundError:
-            common_entries = set()
-    
+            filtered_entries = set()
+
     local_connections = set()
     local_nodes = set()
     local_node_timestamps = {}
@@ -139,13 +137,13 @@ def _process_line_chunk(chunk_data):
             
             if not entry_type or not entry_value:
                 continue
-            
-            is_common = bool(common_entries) and entry_value in common_entries
+            entry_type = entry_type.strip()
+            is_common = bool(filtered_entries) and entry_value in filtered_entries
             is_filtered = bool(process_filtered_types) and entry_type in process_filtered_types
-            is_excluded_value = bool(used_excluded_entries) and entry_value in used_excluded_entries
-            is_excluded_type = bool(used_excluded_entries) and entry_type in used_excluded_entries
+            is_filtered_value = bool(used_filtered_entries) and entry_value in used_filtered_entries
+            is_filtered_type = bool(used_filtered_entries) and entry_type in used_filtered_entries
 
-            if is_excluded_value or is_excluded_type:
+            if is_filtered_value or is_filtered_type:
                 filtered_entry = {
                     'type': entry_type,
                     'value': entry_value,
@@ -188,16 +186,16 @@ def _process_line_chunk(chunk_data):
     
     return local_connections, local_nodes, local_node_timestamps, local_node_counts, local_node_entries, local_filtered_data
 
-def process_json_file(reload_requested=False, custom_excluded_entries=None, use_multiprocessing=True, start_time=None, end_time=None):
+def process_json_file(reload_requested=False, custom_filtered_entries=None, use_multiprocessing=startup_multiprocessing, start_time=None, end_time=None):
     """Käsittelee JSON-tiedoston ja luo metrokartan"""
-    global current_timeline, node_details, available_groups, excluded_entries, group_merge_log
-    
-    used_excluded_entries = custom_excluded_entries if (reload_requested and custom_excluded_entries is not None) else excluded_entries
-    used_excluded_entries = set(used_excluded_entries)
+    global current_timeline, node_details, available_groups, filtered_entries, group_merge_log
+
+    used_filtered_entries = custom_filtered_entries if (reload_requested and custom_filtered_entries is not None) else filtered_entries
+    used_filtered_entries = set(str(x) for x in used_filtered_entries if isinstance(x, (str, int, float)))
     if start_time or end_time:
         print(f"[process] time filter active start={start_time} end={end_time}")
-    print(f"[process] excluded entries active: {len(used_excluded_entries)}")
-    
+    print(f"[process] filtered entries active: {len(used_filtered_entries)}")
+
     all_nodes = set()
     connections_set = set()
     node_timestamps = {}
@@ -222,16 +220,14 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             data = json.load(f)
         
         try:
-            common_values_path = os.path.join('data', 'common_values.txt')
-            if not os.path.exists(common_values_path):
-                common_values_path = 'common_values.txt'
-                
-            with open(common_values_path, "r", encoding="utf-8") as f:
-                common_entries = set(f.read().splitlines())
-                
+            filtered_values_path = os.path.join('data', 'filtered_entries.txt')
+
+            with open(filtered_values_path, "r", encoding="utf-8") as f:
+                filtered_entries = set(f.read().splitlines())
+
         except FileNotFoundError:
-            common_entries = set()
-        
+            filtered_entries = set()
+
         # Ryhmitellään entryt riveittäin
         lines = {}
         total_entries = len(data)
@@ -270,21 +266,21 @@ def process_json_file(reload_requested=False, custom_excluded_entries=None, use_
             chunk_size = max(1, len(line_items) // cpu_count())
 
             process_filtered_types = FILTERED_TYPES.copy()
-            if used_excluded_entries:
-                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_excluded_entries}
+            if used_filtered_entries:
+                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_filtered_entries}
 
             chunks = []
             for i in range(0, len(line_items), chunk_size):
                 chunk = line_items[i:i + chunk_size]
-                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, common_entries, used_excluded_entries))
+                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries))
             with Pool(processes=cpu_count()) as pool:
                 results = pool.map(_process_line_chunk, chunks)
         else:
             print("Processing without multiprocessing...")
             process_filtered_types = FILTERED_TYPES.copy()
-            if used_excluded_entries:
-                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_excluded_entries}
-            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, common_entries, used_excluded_entries)]
+            if used_filtered_entries:
+                process_filtered_types = {t for t in FILTERED_TYPES if t not in used_filtered_entries}
+            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries)]
             results = []
             for chunk in chunks:
                 results.append(_process_line_chunk(chunk))
@@ -424,15 +420,15 @@ def api_timeline():
 @app.route('/api/v2/timeline-heatmap/<group_id>')
 def api_timeline_heatmap(group_id=None):
     try:
-        heatmap_data = timeline.analyze_group_timeline_heatmap(group_id, node_details)
+        heatmap_data = heatmap.analyze_group_timeline_heatmap(group_id, node_details)
             
         if not heatmap_data:
             error_msg = f'No timeline data available for group {group_id}' if group_id else 'No timeline data available'
             return jsonify({'error': error_msg}), 404
             
-        segments = timeline.generate_heatmap_segments(heatmap_data, segments=200)
-        statistics = timeline.get_heatmap_statistics(heatmap_data)
-        
+        segments = heatmap.generate_heatmap_segments(heatmap_data, segments=200)
+        statistics = heatmap.get_heatmap_statistics(heatmap_data)
+
         return jsonify({
             'success': True,
             'group_id': group_id,
@@ -467,7 +463,7 @@ def api_metromap():
     end_time_str = request.args.get('end')
 
     if reset == '1':
-        process_json_file(reload_requested=False, use_multiprocessing=False, start_time=None, end_time=None)
+        process_json_file(reload_requested=False, use_multiprocessing=startup_multiprocessing, start_time=None, end_time=None)
         return jsonify({
             'metromap': current_timeline,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -495,7 +491,7 @@ def api_metromap():
 
     if start_dt or end_dt:
         print(f"Time filtering: start={start_dt}, end={end_dt}")
-        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=False)
+        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
         filtered_result = {
             'metromap': current_timeline,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -513,16 +509,16 @@ def api_select_group(group_id):
     """API ryhmän valintaan"""
     global selected_group_id, current_timeline
     
-    if group_id in available_groups:
-        selected_group_id = group_id
-        current_timeline = formation.generate_timeline_content(group_id, node_details)
-        return jsonify({
-            'success': True, 
-            'selected_group': selected_group_id,
-            'timeline': current_timeline
-        })
-    else:
+    if group_id not in available_groups:
         return jsonify({'success': False, 'error': 'Group not found'}), 404
+    
+    selected_group_id = group_id
+
+    return jsonify({
+        'success': True, 
+        'selected_group': selected_group_id,
+        'multiprocessing': startup_multiprocessing
+    })
 
 @app.route('/api/v2/node-details/<node_id>')
 def api_node_details(node_id):
@@ -600,15 +596,13 @@ def api_visualization(viz_type, group_id):
 @app.route('/api/v2/filtered-entries')
 def api_filtered_entries():
     """filtered entries"""
-    global excluded_entries
+    global filtered_entries
     filtered_values = set()
     
     try:
-        common_values_path = os.path.join('data', 'common_values.txt')
-        if not os.path.exists(common_values_path):
-            common_values_path = 'common_values.txt'
-            
-        with open(common_values_path, "r", encoding="utf-8") as f:
+        filtered_values_path = os.path.join('data', 'filtered_entries.txt')
+
+        with open(filtered_values_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
@@ -635,15 +629,15 @@ def api_filtered_entries():
 @app.route('/api/v2/reload', methods=['POST'])
 def reload_metromap():
     """Reload the metromap with custom exclusion settings"""
-    global excluded_entries
+    global filtered_entries
     try:
         data = request.get_json(silent=True) or {}
-        custom_excluded_entries = data.get('excludedEntries', [])
-        
-        excluded_entries = custom_excluded_entries
-        
-        process_json_file(reload_requested=True, custom_excluded_entries=custom_excluded_entries, use_multiprocessing=startup_multiprocessing)
-        
+        custom_filtered_entries = data.get('filteredEntries', [])
+
+        filtered_entries = custom_filtered_entries
+
+        process_json_file(reload_requested=True, custom_filtered_entries=custom_filtered_entries, use_multiprocessing=startup_multiprocessing)
+
         return jsonify({'success': True})
     except Exception as e:
         print(f"Reload error: {e}")
@@ -659,12 +653,10 @@ def api_add_common_entry():
         if '\n' in value or '\r' in value or len(value) > 500:
             return jsonify({'success': False, 'message': 'Invalid value'}), 400
 
-        common_values_path = os.path.join('data', 'common_values.txt')
-        if not os.path.exists(common_values_path):
-            common_values_path = 'common_values.txt'
+        filtered_values_path = os.path.join('data', 'filtered_entries.txt')
 
         try:
-            with open(common_values_path, 'r', encoding='utf-8') as f:
+            with open(filtered_values_path, 'r', encoding='utf-8') as f:
                 lines = f.read().splitlines()
         except FileNotFoundError:
             lines = []
@@ -683,26 +675,26 @@ def api_add_common_entry():
             new_lines = lines + [value]
             action = 'added'
 
-        dirpath = os.path.dirname(common_values_path) or '.'
+        dirpath = os.path.dirname(filtered_values_path) or '.'
         os.makedirs(dirpath, exist_ok=True)
-        tmp_path = common_values_path + '.tmp'
+        tmp_path = filtered_values_path + '.tmp'
         with open(tmp_path, 'w', encoding='utf-8') as tf:
             if new_lines:
                 tf.write('\n'.join(new_lines).rstrip('\n') + '\n')
 
-        os.replace(tmp_path, common_values_path)
+        os.replace(tmp_path, filtered_values_path)
 
         try:
-            with open(common_values_path, 'r', encoding='utf-8') as f:
-                excluded_entries_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+            with open(filtered_values_path, 'r', encoding='utf-8') as f:
+                filtered_entries_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
         except Exception:
-            excluded_entries_list = []
+            filtered_entries_list = []
 
-        global excluded_entries
-        excluded_entries = excluded_entries_list
+        global filtered_entries
+        filtered_entries = filtered_entries_list
 
         try:
-            process_json_file(reload_requested=True, custom_excluded_entries=excluded_entries, use_multiprocessing=False)
+            process_json_file(reload_requested=True, custom_filtered_entries=filtered_entries, use_multiprocessing=startup_multiprocessing)
         except Exception as e:
             return jsonify({'success': True, 'action': action, 'message': 'File updated but reprocessing failed: ' + str(e)}), 200
 
@@ -753,7 +745,7 @@ def api_heatmap_entries(group_id):
 
 def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5001):
 
-    global lokitiedosto, startup_multiprocessing, excluded_entries, available_groups
+    global lokitiedosto, startup_multiprocessing, filtered_entries, available_groups
 
     if not os.path.isfile(jsonfile):
         print(f"Error: File '{jsonfile}' not found.")
@@ -763,13 +755,11 @@ def start_app(jsonfile, multiprocessing=False, host='127.0.0.1', port=5001):
     startup_multiprocessing = bool(multiprocessing)
 
     try:
-        common_values_path = os.path.join('data', 'common_values.txt')
-        if not os.path.exists(common_values_path):
-            common_values_path = 'common_values.txt'
-        with open(common_values_path, "r", encoding="utf-8") as f:
-            excluded_entries = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        filtered_values_path = os.path.join('data', 'filtered_entries.txt')
+        with open(filtered_values_path, "r", encoding="utf-8") as f:
+            filtered_entries = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except Exception:
-        excluded_entries = []
+        filtered_entries = []
 
     process_json_file(use_multiprocessing=startup_multiprocessing)
 

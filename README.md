@@ -12,5 +12,7 @@ Systaintable is a OUSPG research project aiming to discover potential vulnerabil
     span over different abstraction levels (mac, ip, dns, url, …) (name, userid, public key,…)
 * OUSPG ID.TRACE
     * getting vectors of ID occurrences (extracting the traces) (@ time, locus, component, …)
+* OUSPG Mermetro
+    * Visualization of data from OUSPG ID.ID's or ID.Trace's output. Creates an interactive metro map from standardized log file accessible from your own browser. Currently has two separate tools, both still dependent on each other. See [README.md](mermetro/README.md) for more information.
 
 Additionally this project repository contains guides how to use other tools for doing system level taint analysis.
