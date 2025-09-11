@@ -337,8 +337,8 @@ function renderTimelineHeatmap() {
     const segmentWidth = 100 / heatmapSegments.length;
     const activityColors = {
         'none': '#e0e0e0',
-        'low': '#81c784',
-        'medium': '#ffb74d', 
+        'low': '#ffcdd2',
+        'medium': '#ef9a9a',
         'high': '#f06292',
         'extreme': '#e57373'
     };
@@ -353,8 +353,7 @@ function renderTimelineHeatmap() {
         segmentDiv.style.left = `${index * segmentWidth}%`;
         segmentDiv.style.width = `${segmentWidth}%`;
         segmentDiv.style.backgroundColor = backgroundColor;
-        segmentDiv.style.opacity = Math.max(0.1, intensity);
-        
+        segmentDiv.style.opacity = String(0.5 + 0.5 * intensity);
         segmentDiv.title = `${segment.count} entries (${segment.activity_level})\nType: ${segment.dominant_type}\nClick to view entries`;
         
         segmentDiv.onmouseenter = () => {
