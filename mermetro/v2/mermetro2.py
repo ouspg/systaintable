@@ -308,7 +308,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
             timestamps = node_timestamps.get(node_key, ['N/A'])
             count = node_counts.get(node_key, 0)
             entries = node_entries.get(node_key, [])
-            filtered_entries = filtered_data.get(node_key, [])
+            node_filtered_entries = filtered_data.get(node_key, [])
             
             actual_value = entries[0]['value'] if entries else 'Unknown'
             actual_type = entries[0]['type'] if entries else 'Unknown'
@@ -329,7 +329,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
                 'first_seen': first_time,
                 'last_seen': last_time,
                 'entries': sorted(entries, key=lambda x: x['timestamp']),
-                'filtered_entries': sorted(filtered_entries, key=lambda x: x['timestamp'])
+                'filtered_entries': sorted(node_filtered_entries, key=lambda x: x['timestamp'])
             }
         
         # Luodaan ryhmätiedot
@@ -675,8 +675,7 @@ def api_add_common_entry():
             new_lines = lines + [value]
             action = 'added'
 
-        dirpath = os.path.dirname(filtered_values_path) or '.'
-        os.makedirs(dirpath, exist_ok=True)
+        os.makedirs('data', exist_ok=True)
         tmp_path = filtered_values_path + '.tmp'
         with open(tmp_path, 'w', encoding='utf-8') as tf:
             if new_lines:
@@ -693,15 +692,10 @@ def api_add_common_entry():
         global filtered_entries
         filtered_entries = filtered_entries_list
 
-        try:
-            process_json_file(reload_requested=True, custom_filtered_entries=filtered_entries, use_multiprocessing=startup_multiprocessing)
-        except Exception as e:
-            return jsonify({'success': True, 'action': action, 'message': 'File updated but reprocessing failed: ' + str(e)}), 200
-
         return jsonify({'success': True, 'action': action})
     except Exception as e:
-        print(f"api_common_add error: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        print(f"Error adding filtered entry: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/v2/heatmap-entries/<group_id>')
 def api_heatmap_entries(group_id):

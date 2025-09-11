@@ -33,12 +33,16 @@ mermetro/
 ├── v1/
 │   ├── static/
 │   │   ├── favicon.ico
+│   │   ├── v1_script.js
+│   │   ├── v1_styles.css
 │   ├── templates/
 │   │   ├── sivusto.html
 │   ├── mermetro.py
 ├── v2/
 │   ├── static/
 │   │   ├── favicon.ico
+│   │   ├── v2_script.js
+│   │   ├── v2_styles.css
 │   ├── templates/
 │   │   ├── group_timeline.html
 │   ├── mermetro2.py

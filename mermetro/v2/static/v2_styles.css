@@ -49,34 +49,6 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-.heatmap-time-label.high-activity {
-    font-weight: bold; 
-    background: rgba(229,115,115,0.9); 
-    color: white; 
-    border-color: #e57373;
-}
-
-.heatmap-time-label.medium-activity {
-    font-weight: 600; 
-    background: rgba(255,183,77,0.9); 
-    color: #333; 
-    border-color: #ffb74d;
-}
-
-.heatmap-time-label.low-activity {
-    font-weight: 500; 
-    background: rgba(129,199,132,0.9); 
-    color: #333; 
-    border-color: #81c784;
-}
-
-.heatmap-time-label.no-activity {
-    font-weight: normal; 
-    background: rgba(224,224,224,0.9); 
-    color: #666; 
-    border-color: #e0e0e0;
-}
-
 .heatmap-date-label {
     position: absolute; 
     bottom: -20px; 
