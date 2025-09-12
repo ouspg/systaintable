@@ -699,7 +699,7 @@ def api_metromap():
     end_time_str = request.args.get('end')
 
     if reset == '1':
-        process_json_file(reload_requested=False, use_multiprocessing=False, start_time=None, end_time=None)
+        process_json_file(reload_requested=True, use_multiprocessing=False, start_time=None, end_time=None)
         return jsonify({
             'metromap': current_metromap,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -723,7 +723,7 @@ def api_metromap():
 
     if start_dt or end_dt:
         print(f"Time filtering: start={start_dt}, end={end_dt}")
-        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
+        process_json_file(reload_requested=True, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
         filtered_result = {
             'metromap': current_metromap,
             'timestamp': datetime.now().strftime('%H:%M:%S')
