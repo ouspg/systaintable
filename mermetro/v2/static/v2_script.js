@@ -129,7 +129,7 @@ function showNodeOrGroupModal(nodeData) {
             if (tupleEntries.length >= 2 && tupleEntries.every(e => e.tuple_line === tupleEntries[0].tuple_line)) {
                 content += `<h4>Group formed from tuple:</h4><p><b>Line ${tupleEntries[0].line}</b> at time ${tupleEntries[0].timestamp}</p>`;
                 content += createGroupSection('', tupleEntries).replace('<h4></h4>', '');
-                content += '<p><b>Reason:</b> These entries were found together on the same line and formed a tuple. Neither entry belonged to an existing group.</p><br>';
+                content += '<p><b>Reason:</b> These entries were found together on a same line and formed a tuple. Neither entry belonged to an existing group.</p><br>';
                 content += createDetailsTable(nodeData.formed_from, 'Forming tuple details', 'Details of the entries that caused this group to form');
             }
         } else if (['GroupAdded', 'GroupJoined', 'Added'].includes(nodeData.type)) {
@@ -241,7 +241,6 @@ function showModal(title, content) {
 function selectGroup(groupId) {
     chartDirection = 'TD';
     document.getElementById('direction-btn').textContent = 'Top Down';
-    
     document.getElementById('formation-timeline-container').innerHTML = '<div class="loading">Loading formation timeline...</div>';
     document.getElementById('nodes-container').innerHTML = '<div class="loading">Loading nodes visualization...</div>';
     document.getElementById('timelineHeatmapBar').innerHTML = '<div class="loading">Loading heatmap...</div>';
@@ -337,8 +336,8 @@ function renderTimelineHeatmap() {
     const segmentWidth = 100 / heatmapSegments.length;
     const activityColors = {
         'none': '#e0e0e0',
-        'low': '#81c784',
-        'medium': '#ffb74d', 
+        'low': '#ffcdd2',
+        'medium': '#ef9a9a',
         'high': '#f06292',
         'extreme': '#e57373'
     };
@@ -353,8 +352,7 @@ function renderTimelineHeatmap() {
         segmentDiv.style.left = `${index * segmentWidth}%`;
         segmentDiv.style.width = `${segmentWidth}%`;
         segmentDiv.style.backgroundColor = backgroundColor;
-        segmentDiv.style.opacity = Math.max(0.1, intensity);
-        
+        segmentDiv.style.opacity = String(0.5 + 0.5 * intensity);
         segmentDiv.title = `${segment.count} entries (${segment.activity_level})\nType: ${segment.dominant_type}\nClick to view entries`;
         
         segmentDiv.onmouseenter = () => {
@@ -643,7 +641,7 @@ function showFilteredModal(filteredData) {
                 <div class="checkbox-list">${nodeListHtml}</div>
             </div>
             <div class="reload-container">
-                <button id="reloadMapButton" class="reload-button">Process</button>
+                <button id="reloadMapButton" class="reload-button">Process with selected entries</button>
             </div>
         </div>
     `;
@@ -826,7 +824,7 @@ function showRefreshNotification() {
     notification.className = 'refresh-notification';
     notification.innerHTML = `
         <div class="refresh-notification-content">
-            <h3>Metromap Updated Successfully!</h3>
+            <h3>Updated Successfully!</h3>
             <strong>Please refresh the page to see the updated groups.</strong></p>
             <div class="refresh-buttons">
                 <button id="refreshPageButton" class="refresh-page-button">Refresh Page Now</button>

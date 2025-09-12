@@ -219,14 +219,13 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
         with open(lokitiedosto, "r", encoding="utf-8") as f:
             data = json.load(f)
         
+        file_common_entries = set()
         try:
             filtered_values_path = os.path.join('data', 'filtered_entries.txt')
-
             with open(filtered_values_path, "r", encoding="utf-8") as f:
-                filtered_entries = set(f.read().splitlines())
-
+                file_common_entries = {line.strip() for line in f if line.strip() and not line.startswith('#')}
         except FileNotFoundError:
-            filtered_entries = set()
+            pass
 
         # Ryhmitellään entryt riveittäin
         lines = {}
@@ -272,7 +271,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
             chunks = []
             for i in range(0, len(line_items), chunk_size):
                 chunk = line_items[i:i + chunk_size]
-                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries))
+                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, file_common_entries, used_filtered_entries))
             with Pool(processes=cpu_count()) as pool:
                 results = pool.map(_process_line_chunk, chunks)
         else:
@@ -280,7 +279,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
             process_filtered_types = FILTERED_TYPES.copy()
             if used_filtered_entries:
                 process_filtered_types = {t for t in FILTERED_TYPES if t not in used_filtered_entries}
-            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries)]
+            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, file_common_entries, used_filtered_entries)]
             results = []
             for chunk in chunks:
                 results.append(_process_line_chunk(chunk))
@@ -308,7 +307,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
             timestamps = node_timestamps.get(node_key, ['N/A'])
             count = node_counts.get(node_key, 0)
             entries = node_entries.get(node_key, [])
-            filtered_entries = filtered_data.get(node_key, [])
+            node_filtered_entries = filtered_data.get(node_key, [])
             
             actual_value = entries[0]['value'] if entries else 'Unknown'
             actual_type = entries[0]['type'] if entries else 'Unknown'
@@ -329,7 +328,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
                 'first_seen': first_time,
                 'last_seen': last_time,
                 'entries': sorted(entries, key=lambda x: x['timestamp']),
-                'filtered_entries': sorted(filtered_entries, key=lambda x: x['timestamp'])
+                'filtered_entries': sorted(node_filtered_entries, key=lambda x: x['timestamp'])
             }
         
         # Luodaan ryhmätiedot
@@ -463,7 +462,7 @@ def api_metromap():
     end_time_str = request.args.get('end')
 
     if reset == '1':
-        process_json_file(reload_requested=False, use_multiprocessing=startup_multiprocessing, start_time=None, end_time=None)
+        process_json_file(reload_requested=True, custom_filtered_entries=filtered_entries, use_multiprocessing=startup_multiprocessing, start_time=None, end_time=None)
         return jsonify({
             'metromap': current_timeline,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -491,7 +490,7 @@ def api_metromap():
 
     if start_dt or end_dt:
         print(f"Time filtering: start={start_dt}, end={end_dt}")
-        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
+        process_json_file(reload_requested=True, custom_filtered_entries=filtered_entries, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
         filtered_result = {
             'metromap': current_timeline,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -675,8 +674,7 @@ def api_add_common_entry():
             new_lines = lines + [value]
             action = 'added'
 
-        dirpath = os.path.dirname(filtered_values_path) or '.'
-        os.makedirs(dirpath, exist_ok=True)
+        os.makedirs('data', exist_ok=True)
         tmp_path = filtered_values_path + '.tmp'
         with open(tmp_path, 'w', encoding='utf-8') as tf:
             if new_lines:
@@ -693,15 +691,10 @@ def api_add_common_entry():
         global filtered_entries
         filtered_entries = filtered_entries_list
 
-        try:
-            process_json_file(reload_requested=True, custom_filtered_entries=filtered_entries, use_multiprocessing=startup_multiprocessing)
-        except Exception as e:
-            return jsonify({'success': True, 'action': action, 'message': 'File updated but reprocessing failed: ' + str(e)}), 200
-
         return jsonify({'success': True, 'action': action})
     except Exception as e:
-        print(f"api_common_add error: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        print(f"Error adding filtered entry: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/v2/heatmap-entries/<group_id>')
 def api_heatmap_entries(group_id):

@@ -33,9 +33,9 @@ def generate_heatmap_segments(timeline_data, segments=200):
         
         if count == 0:
             activity_level = 'none'
-        elif count <= 2:
-            activity_level = 'low'
         elif count <= 10:
+            activity_level = 'low'
+        elif count <= 30:
             activity_level = 'medium'
         elif count <= 50:
             activity_level = 'high'

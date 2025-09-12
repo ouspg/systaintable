@@ -363,71 +363,51 @@ def generate_metromap_content(all_nodes, connections):
         color_index = group_num % len(colors)
         fill_color, stroke_color = colors[color_index]
         
-        # Yksittäinen solmu
-        if len(group_list) == 1:
-            node = group_list[0]
-            node_id = node.split('(')[0]
-            group_ball_id = f"ID_{group_num + 1}"
-            group_ball_node = f"{group_ball_id}(({group_ball_id}))"
-            
+        group_ball_id = f"ID_{group_num + 1}"
+        group_ball_node = f"{group_ball_id}(({group_ball_id.split('_')[0]} {group_ball_id.split('_')[1]}))"
+        
+        for node in group_list:
             content += f"    {node}\n"
-            content += f"    {group_ball_node}\n"
-            content += "\n"
-            
-            all_connections.append(f"    {group_ball_id} --- {node_id}")
-            
-            all_styles.append(f"    style {node_id} fill:{fill_color},stroke:{stroke_color},color:#fff,stroke-width:3px")
-            all_styles.append(f"    style {group_ball_id} fill:{fill_color},stroke:{stroke_color},color:#fff,stroke-width:4px,stroke-dasharray: 3 3")
-            all_styles.append(f"    linkStyle {len(all_connections) - 1} stroke:{fill_color},stroke-width:5px")
-            
-            processed_nodes.add(node)
-        else:
-            # Useamman solmun ryhmä
-            group_ball_id = f"ID_{group_num + 1}"
-            group_ball_node = f"{group_ball_id}(({group_ball_id}))"
-            
-            for node in group_list:
-                content += f"    {node}\n"
-            content += f"    {group_ball_node}\n"
-            content += "\n"
+        content += f"    {group_ball_node}\n"
+        content += "\n"
             
             # Ensimmäiselle tasolle 3 solmua
-            first_level = group_list[:3]
-            remaining_nodes = group_list[3:]
-            for node in first_level:
-                node_id = node.split('(')[0]
-                all_connections.append(f"    {group_ball_id} --- {node_id}")
+        first_level = group_list[:3]
+        remaining_nodes = group_list[3:]
+        for node in first_level:
+            node_id = node.split('(')[0]
+            all_connections.append(f"    {group_ball_id} --- {node_id}")
             
-            current_level = first_level
-            remaining = remaining_nodes
+        current_level = first_level
+        remaining = remaining_nodes
             
             # Loopissa muodostetaan metrokartan kolmirivinen rakenne
-            while current_level and remaining:
-                next_level = []
-                for i, parent_node in enumerate(current_level):
-                    if i < len(remaining):
-                        child_node = remaining[i]
-                        parent_id = parent_node.split('(')[0]
-                        child_id = child_node.split('(')[0]
-                        all_connections.append(f"    {parent_id} --- {child_id}")
-                        next_level.append(child_node)
+        while current_level and remaining:
+            next_level = []
+            for i, parent_node in enumerate(current_level):
+                if i < len(remaining):
+                    child_node = remaining[i]
+                    parent_id = parent_node.split('(')[0]
+                    child_id = child_node.split('(')[0]
+                    all_connections.append(f"    {parent_id} --- {child_id}")
+                    next_level.append(child_node)
                 
-                current_level = next_level
-                remaining = remaining[len(next_level):]
+            current_level = next_level
+            remaining = remaining[len(next_level):]
             
-            for node in group_list:
-                node_id = node.split('(')[0]
-                all_styles.append(f"    style {node_id} fill:{fill_color},stroke:{stroke_color},color:#fff,stroke-width:3px")
+        for node in group_list:
+            node_id = node.split('(')[0]
+            all_styles.append(f"    style {node_id} fill:{fill_color},stroke:{stroke_color},color:#fff,stroke-width:3px")
             
-            all_styles.append(f"    style {group_ball_id} fill:{fill_color},stroke:{stroke_color},color:#fff,stroke-width:4px,stroke-dasharray: 3 3")
+        all_styles.append(f"    style {group_ball_id} fill:{fill_color},stroke:{stroke_color},color:#fff,stroke-width:4px,stroke-dasharray: 3 3")
             
             # Link-tyylit
-            total_connections = len(group_list)
-            connection_start = len(all_connections) - total_connections
-            for i in range(total_connections):
-                all_styles.append(f"    linkStyle {connection_start + i} stroke:{fill_color},stroke-width:5px")
+        total_connections = len(group_list)
+        connection_start = len(all_connections) - total_connections
+        for i in range(total_connections):
+            all_styles.append(f"    linkStyle {connection_start + i} stroke:{fill_color},stroke-width:5px")
             
-            processed_nodes.update(group_list)
+        processed_nodes.update(group_list)
     
     # Lisää jäljelle jääneet solmut omina ryhminä
     remaining_nodes = all_nodes - processed_nodes
@@ -438,7 +418,7 @@ def generate_metromap_content(all_nodes, connections):
         
         node_id = node.split('(')[0]
         group_ball_id = f"ID_{group_num + 1}"
-        group_ball_node = f"{group_ball_id}(({group_ball_id}))"
+        group_ball_node = f"{group_ball_id}(({group_ball_id.split('_')[0]} {group_ball_id.split('_')[1]}))"
         
         content += f"    {node}\n"
         content += f"    {group_ball_node}\n"
@@ -494,13 +474,13 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
         with open(lokitiedosto, "r", encoding="utf-8") as f:
             data = json.load(f)
         
+        file_common_entries = set()
         try:
             filtered_values_path = os.path.join('data', 'filtered_entries.txt')
             with open(filtered_values_path, "r", encoding="utf-8") as f:
-                filtered_entries = set(f.read().splitlines())
-                
+                file_common_entries = {line.strip() for line in f if line.strip() and not line.startswith('#')}
         except FileNotFoundError:
-            filtered_entries = set()
+            file_common_entries = set()
 
         lines = {}
         total_entries = len(data)
@@ -544,7 +524,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
             chunks = []
             for i in range(0, len(line_items), chunk_size):
                 chunk = line_items[i:i + chunk_size]
-                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries))
+                chunks.append((chunk, PERSONAL_TYPES, process_filtered_types, file_common_entries, used_filtered_entries))
             with Pool(processes=cpu_count()) as pool:
                 results = pool.map(_process_line_chunk, chunks)
         else:
@@ -552,7 +532,7 @@ def process_json_file(reload_requested=False, custom_filtered_entries=None, use_
             process_filtered_types = FILTERED_TYPES.copy()
             if used_filtered_entries:
                 process_filtered_types = {t for t in FILTERED_TYPES if t not in used_filtered_entries}
-            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, filtered_entries, used_filtered_entries)]
+            chunks = [(line_items, PERSONAL_TYPES, process_filtered_types, file_common_entries, used_filtered_entries)]
             results = []
             for chunk in chunks:
                 results.append(_process_line_chunk(chunk))
@@ -719,7 +699,7 @@ def api_metromap():
     end_time_str = request.args.get('end')
 
     if reset == '1':
-        process_json_file(reload_requested=False, use_multiprocessing=False, start_time=None, end_time=None)
+        process_json_file(reload_requested=True, use_multiprocessing=False, start_time=None, end_time=None)
         return jsonify({
             'metromap': current_metromap,
             'timestamp': datetime.now().strftime('%H:%M:%S')
@@ -743,7 +723,7 @@ def api_metromap():
 
     if start_dt or end_dt:
         print(f"Time filtering: start={start_dt}, end={end_dt}")
-        process_json_file(reload_requested=False, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
+        process_json_file(reload_requested=True, start_time=start_dt, end_time=end_dt, use_multiprocessing=startup_multiprocessing)
         filtered_result = {
             'metromap': current_metromap,
             'timestamp': datetime.now().strftime('%H:%M:%S')

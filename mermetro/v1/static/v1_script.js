@@ -253,7 +253,7 @@ function showFilteredModal(filteredData) {
                 <div class="checkbox-list">${nodeListHtml}</div>
             </div>
             <div class="reload-container">
-                <button id="reloadMapButton" class="reload-button">Process</button>
+                <button id="reloadMapButton" class="reload-button">Process with selected entries</button>
             </div>
         </div>
     `;

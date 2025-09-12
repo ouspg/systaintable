@@ -13,35 +13,27 @@
     <script type="module" src="{{ url_for('static', filename='v2_script.js') }}"></script>
 </head>
 <body>
-    <div class="header"><h1>Mermetro2</h1></div>
-    <div class="controls">
-        <div class="control-group">
-            <label for="group-selector">Select Group:</label>
+    <h1>Mermetro2</h1>
+    <div class="info">
+        <p>Updated: <span id="timestamp">{{ timestamp }}</span></p>
+        <div class="group-container">
             <select id="group-selector"></select>
+            <button id="filteredButton">Filtered Entries</button>
         </div>
-        <div class="control-group">
-            <label>Selected:</label>
-            <span id="selected-group" class="status">{{ selected_group or 'None' }}</span>
+        <div class="timerange-container">
+            <label for="startDate">Start Date:</label>
+            <input type="date" id="startDate" placeholder="yyyy-mm-dd">
+            <label for="startTime">Time:</label>
+            <input type="time" id="startTime" value="00:00:00" step="1">
+
+            <label for="endDate">End Date:</label>
+            <input type="date" id="endDate" placeholder="yyyy-mm-dd">
+            <label for="endTime">Time:</label>
+            <input type="time" id="endTime" value="23:59:59" step="1">
+            
+            <button id="applyTimeRangeButton">Apply Time Range</button>
+            <button id="clearTimeRangeButton">Reset</button>
         </div>
-        <div class="control-group">
-            <label>Last Update:</label>
-            <span id="timestamp" class="status">{{ timestamp }}</span>
-        </div>
-        <button id="filteredButton">Filtered Entries</button>
-    </div>
-
-    <div class="timerange-container">
-        <input type="date" id="startDate" placeholder="yyyy-mm-dd">
-        <label for="startTime">Time:</label>
-        <input type="time" id="startTime" value="00:00:00" step="1">
-
-        <label for="endDate">End Date:</label>
-        <input type="date" id="endDate" placeholder="yyyy-mm-dd">
-        <label for="endTime">Time:</label>
-        <input type="time" id="endTime" value="23:59:59" step="1">
-
-        <button id="applyTimeRangeButton">Apply Time Range</button>
-        <button id="clearTimeRangeButton">Reset</button>
     </div>
 
     <div class="diagram-section">
@@ -86,8 +78,7 @@
                     <span id="heatmapStart">Loading...</span> to <span id="heatmapEnd">Loading...</span>
                 </div>
             </div>
-            <div id="heatmapStats">
-            </div>
+            <div id="heatmapStats"></div>
         </div>
     </div>
     
