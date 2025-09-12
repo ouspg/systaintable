@@ -241,7 +241,6 @@ function showModal(title, content) {
 function selectGroup(groupId) {
     chartDirection = 'TD';
     document.getElementById('direction-btn').textContent = 'Top Down';
-    
     document.getElementById('formation-timeline-container').innerHTML = '<div class="loading">Loading formation timeline...</div>';
     document.getElementById('nodes-container').innerHTML = '<div class="loading">Loading nodes visualization...</div>';
     document.getElementById('timelineHeatmapBar').innerHTML = '<div class="loading">Loading heatmap...</div>';
@@ -642,7 +641,7 @@ function showFilteredModal(filteredData) {
                 <div class="checkbox-list">${nodeListHtml}</div>
             </div>
             <div class="reload-container">
-                <button id="reloadMapButton" class="reload-button">Process</button>
+                <button id="reloadMapButton" class="reload-button">Process with selected entries</button>
             </div>
         </div>
     `;
@@ -825,7 +824,7 @@ function showRefreshNotification() {
     notification.className = 'refresh-notification';
     notification.innerHTML = `
         <div class="refresh-notification-content">
-            <h3>Metromap Updated Successfully!</h3>
+            <h3>Updated Successfully!</h3>
             <strong>Please refresh the page to see the updated groups.</strong></p>
             <div class="refresh-buttons">
                 <button id="refreshPageButton" class="refresh-page-button">Refresh Page Now</button>
