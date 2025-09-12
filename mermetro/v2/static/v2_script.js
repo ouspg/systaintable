@@ -129,7 +129,7 @@ function showNodeOrGroupModal(nodeData) {
             if (tupleEntries.length >= 2 && tupleEntries.every(e => e.tuple_line === tupleEntries[0].tuple_line)) {
                 content += `<h4>Group formed from tuple:</h4><p><b>Line ${tupleEntries[0].line}</b> at time ${tupleEntries[0].timestamp}</p>`;
                 content += createGroupSection('', tupleEntries).replace('<h4></h4>', '');
-                content += '<p><b>Reason:</b> These entries were found together on the same line and formed a tuple. Neither entry belonged to an existing group.</p><br>';
+                content += '<p><b>Reason:</b> These entries were found together on a same line and formed a tuple. Neither entry belonged to an existing group.</p><br>';
                 content += createDetailsTable(nodeData.formed_from, 'Forming tuple details', 'Details of the entries that caused this group to form');
             }
         } else if (['GroupAdded', 'GroupJoined', 'Added'].includes(nodeData.type)) {

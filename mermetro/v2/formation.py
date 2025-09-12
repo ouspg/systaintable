@@ -332,10 +332,12 @@ def generate_timeline_content(group_id, node_details):
             next_color_index = (next_color_index + 1) % len(colors)
             
             if node_a:
-                connections.append(f"    {node_a} -- \"{connecting_tuple}\" --> {group_node_id}")
-                parent_groups[group_node_id] = node_a
+                if node_a != group_node_id:
+                    connections.append(f"    {node_a} -- \"{connecting_tuple}\" --> {group_node_id}")
+                    parent_groups[group_node_id] = node_a
             if node_b:
-                connections.append(f"    {node_b} -- \"{connecting_tuple}\" --> {group_node_id}")
+                if node_b != group_node_id:
+                    connections.append(f"    {node_b} -- \"{connecting_tuple}\" --> {group_node_id}")
             
             group_entries = node_details[group_id].get('entries', []) if group_id in node_details else []
             
