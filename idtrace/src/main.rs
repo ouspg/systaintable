@@ -592,8 +592,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pb.finish_with_message(format!("Processed {} entries, created {} base identities", entries.len(), identity_counter));
                 
                 // Build final identity groups
-                let mut final_groups: HashMap<usize, Vec<usize>> = HashMap::new();
-                
+                let mut final_groups: HashMap<usize, Vec<usize>> = HashMap::with_capacity(identity_counter);
+
                 for (idx, entry) in entries.iter().enumerate() {
                     if let Some(&identity) = line_to_identity.get(&entry.line) {
                         final_groups.entry(identity).or_default().push(idx);
@@ -615,14 +615,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|i| (i, disjoint_set.find(i)))
                 .collect();
             
-            let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+            let mut groups: HashMap<usize, Vec<usize>> = HashMap::with_capacity(disjoint_set.size / 10); // Estimate ~10% unique groups
+
             for (idx, entry) in entries.iter().enumerate() {
                 if let Some(&line_idx) = line_to_index.get(&entry.line) {
                     let root = line_to_root[&line_idx];
                     groups.entry(root).or_default().push(idx);
                 }
             }
-            
+                
             println!("Built {} identity groups in {:.2}s", groups.len(), build_start.elapsed().as_secs_f64());
             identity_groups = groups;
         }        
