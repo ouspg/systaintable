@@ -1,0 +1,9 @@
+# Rust compilation artifacts
+*/Cargo.lock
+classifier/regex-classifier/
+classifier/target/
+
+# Runtime data
+data/*
+mermetro/metrokartta.html
+mermetro/metrokartta_koodi.txt

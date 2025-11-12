@@ -79,7 +79,6 @@ fn process_chunk(lines: &[String], regex_iso: &Regex, regex_syslog: &Regex, line
             }));
         }
         
-        // Usernames
         for username in extraction::username::extract_usernames(line) {
             line_findings.push(json!({
                 "line": line_num,
