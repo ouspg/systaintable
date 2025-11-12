@@ -5,8 +5,20 @@
     },
     "forwardPorts": [5000, 8080],
     "postCreateCommand": "./build-tools.sh",
-
+    
     "mounts": [
-        "source=systaintable-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
-    }
+        "source=systaintable-bashhistory-${devcontainerId},target=/commandhistory,type=volume"
+    ],
+    
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "ms-python.python",
+                "ms-vscode.vscode-json"
+            ]
+        }
+    },
+    
+    "remoteUser": "root",
 }
