@@ -14,3 +14,38 @@ Systaintable is a OUSPG research project aiming to discover potential vulnerabil
     * getting vectors of ID occurrences (extracting the traces) (@ time, locus, component, …)
 
 Additionally this project repository contains guides how to use other tools for doing system level taint analysis.
+
+## Getting started
+
+1. **Clone the repository**
+    ```bash
+   git clone git@github.com:ouspg/systaintable.git
+   cd systaintable
+   ```
+
+2. **Open in Dev Container**
+    * Open VS Code in the project directory ```code .```
+    * When prompted, click "Reopen in Container"
+    * Or use Command Palette: ```Dev Containers: Reopen in Container```
+
+## Basic usage
+
+1. **Prepare your data**
+
+    * Create a data directory and add your log files:
+
+    ```bash
+    mkdir -p data
+    cp /path/to/your/*.log data/
+    ```
+2. **Run the Analysis Pipeline**
+
+    * You can use logprocess.sh to run the analysis pipeline
+
+    * Basic usage - search for an identifier in logs
+    ```bash
+    ./logprocess.sh "192.168.1.1"
+    ```
+
+
+3. ## Example Workflow
