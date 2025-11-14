@@ -58,7 +58,7 @@ def main(args: argparse.Namespace) -> None:
     for line in sys.stdin:
         outline = []
         line = json.loads(line)
-        for key in sorted(line.keys()):
+        for key in sorted(line.keys(), key=str.casefold):
             max_token, tokens, tok = add_token(max_token, tokens, key)
             outline.append(tok)
             max_token, tokens, tok = add_token(max_token, tokens, line[key])
@@ -66,12 +66,19 @@ def main(args: argparse.Namespace) -> None:
         line_lens[len(outline)] += 1
         print(json.dumps(outline))
 
-    print(line_lens.most_common())
+    if args.debug:
+        print(line_lens.most_common())
     save_tokens(max_token, tokens, outfile)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--tokenfile", help="Tokenfile")
+    parser.add_argument("-d", "--debug", action="store_true",
+                        default=False, help="Debug")
     args = parser.parse_args()
     main(args)
+
+# TODO
+# nested structures to separate vectors
+# references to different vectors as tokens in their own token space (negative?)
