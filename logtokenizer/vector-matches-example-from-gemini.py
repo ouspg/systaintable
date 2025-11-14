@@ -1,56 +1,74 @@
 import numpy as np
+from itertools import combinations
 
 # Example token vectors (log lines)
-# Each number represents a token ID. Vectors must be the same length for this approach.
+# Vector length (L) is 6.
+# 0 and 2 differ at index 1 and 3 (Distance = 2)
+# 0 and 1 differ at index 2 and 5 (Distance = 2)
+# 1 and 5 are identical (Distance = 0)
+# 0 and 4 are identical (Distance = 0)
+# 1 and 6 differ at index 2 only (Distance = 1) <--- The target pattern
 log_vectors = [
-    [101, 205, 301, 410, 500, 602],
-    [101, 205, 302, 410, 500, 603],
-    [101, 206, 301, 411, 500, 602],
-    [700, 800, 900, 100, 110, 120],
-    [101, 205, 301, 410, 500, 602] # Duplicate of vector 0
+    [101, 205, 301, 410, 500, 602], # Index 0
+    [101, 205, 302, 410, 500, 603], # Index 1
+    [101, 206, 301, 411, 500, 602], # Index 2
+    [700, 800, 900, 100, 110, 120], # Index 3 (Very different)
+    [101, 205, 301, 410, 500, 602], # Index 4 (Duplicate of 0)
+    [101, 205, 302, 410, 500, 603], # Index 5 (Duplicate of 1)
+    [101, 205, 305, 410, 500, 603]  # Index 6 (Differs from 1 at index 2: 305 vs 302)
 ]
 
-# Convert to NumPy array for efficient comparison
+# Convert to NumPy array
 vectors = np.array(log_vectors)
 
-def positional_overlap_similarity(vector_a, vector_b):
+def calculate_hamming_distance(vector_a, vector_b):
     """
-    Calculates the number of tokens that are identical and in the same position
-    between two vectors. (Assuming same-length vectors).
+    Calculates the Hamming Distance: the number of positions at which the
+    corresponding elements are different.
     """
-    # Uses boolean comparison and sums the 'True' values (which are 1)
-    return np.sum(vector_a == vector_b)
+    # The '==' operator returns a boolean array (True for match, False for difference).
+    # Subtracting this from 1 (or taking the negation ~) yields a 1 for difference, 0 for match.
+    # Summing this result gives the Hamming Distance.
+    return np.sum(vector_a != vector_b)
 
-def find_most_similar_vectors(target_vector, all_vectors, top_n=3):
+def find_single_difference_pairs(all_vectors):
     """
-    Compares a target vector to all other vectors and returns the top N
-    most similar by positional overlap.
+    Finds all unique pairs of vectors (indices) that have a Hamming Distance of exactly 1.
     """
-    similarity_scores = []
-    
-    # Iterate through all vectors, excluding the target vector itself (if it's in the list)
-    for i, current_vector in enumerate(all_vectors):
-        # Calculate similarity
-        score = positional_overlap_similarity(target_vector, current_vector)
+    # Use combinations to check every unique pair only once
+    num_vectors = len(all_vectors)
+    single_diff_pairs = []
+
+    # Iterate through all unique pairs of indices (i, j)
+    for i, j in combinations(range(num_vectors), 2):
+        vector_i = all_vectors[i]
+        vector_j = all_vectors[j]
         
-        # Store index (for identification) and the score
-        similarity_scores.append((i, score, current_vector.tolist()))
+        # NOTE: Handle identical vectors (Distance 0) if you don't want to include them
+        # in the count of (i, j) pairs. The 'combinations' handles the (i, i) case.
 
-    # Sort the list by score in descending order
-    # The key is a lambda function to sort by the score (index 1)
-    similarity_scores.sort(key=lambda x: x[1], reverse=True)
-    
-    # Return the top N results
-    return similarity_scores[:top_n]
+        distance = calculate_hamming_distance(vector_i, vector_j)
 
-# --- Example Usage ---
-# Use the first vector as the target for comparison
-target_vector = vectors[0]
+        if distance == 1:
+            # Found a pair that differs in exactly one position
+            single_diff_pairs.append((i, j))
+            
+    return single_diff_pairs
 
-# Find the top 3 vectors most similar to the target_vector
-top_similar = find_most_similar_vectors(target_vector, vectors, top_n=3)
+# --- Execution ---
+single_change_pairs = find_single_difference_pairs(vectors)
 
-print(f"Target Vector (Index 0): {target_vector.tolist()}")
-print("\nTop Similar Vectors by Positional Overlap:")
-for index, score, vector in top_similar:
-    print(f"Index: {index}, Score (Matches): {score}, Vector: {vector}")
+print("Pairs of vectors (indices) that differ in exactly one position (Hamming Distance = 1):")
+print("---")
+if single_change_pairs:
+    for i, j in single_change_pairs:
+        # Find the index where the difference occurs
+        diff_position = np.where(vectors[i] != vectors[j])[0][0]
+        
+        print(f"Indices: ({i}, {j})")
+        print(f"  Difference at position (index): {diff_position}")
+        print(f"  Vector {i}: {vectors[i].tolist()}")
+        print(f"  Vector {j}: {vectors[j].tolist()}")
+        print("-" * 20)
+else:
+    print("No pairs found with a Hamming Distance of exactly 1.")

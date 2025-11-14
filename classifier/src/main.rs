@@ -6,7 +6,6 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::fs;
 use serde_json::json;
 use std::time::{Instant};
@@ -105,7 +104,7 @@ fn main() -> io::Result<()> {
             (count as f64 * (file_size as f64 / bytes_read as f64)) as usize
         } else {
             // For smaller files, just count all lines
-            let mut reader = BufReader::with_capacity(1_000_000, file.try_clone()?);
+            let reader = BufReader::with_capacity(1_000_000, file.try_clone()?);
             reader.lines().count()
         };
         
